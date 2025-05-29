@@ -6,6 +6,9 @@ from rest import get_valid_token
 import random
 import time
 from datetime import datetime, timezone
+from keep_alive import keep_alive
+
+keep_alive()
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
