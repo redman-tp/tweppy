@@ -3,4 +3,3 @@ requests
 tweepy
 python-dotenv
 flask
-threading
