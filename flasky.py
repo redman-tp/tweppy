@@ -1,4 +1,4 @@
-vimport logging
+import logging
 import requests
 import pytz
 from flask import Flask
