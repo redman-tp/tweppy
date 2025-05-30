@@ -6,6 +6,7 @@ from rest import get_valid_token
 import random
 import time
 from datetime import datetime, timezone
+from threading import Thread
 from flasky import keep_alive
 
 keep_alive()
@@ -95,6 +96,18 @@ def post_random_waifu(api_v1):
         if os.path.exists(IMAGE_PATH):
             os.remove(IMAGE_PATH)
 
+
+def self_ping():
+    url = "https://genetic-josie-loganrustyy-24b417b3.koyeb.app"
+    while True:
+        try:
+            res = requests.get(url)
+            logger.info(f"Pinged {url} - Status: {res.status_code}")
+        except Exception as e:
+            logger.error(f"Failed to ping self: {e}")
+        time.sleep(300)  # 5 minutes
+
+
 # Main setup and scheduling
 def main():
     # Authenticate with v1.1
@@ -103,7 +116,7 @@ def main():
         V1_ACCESS_TOKEN, V1_ACCESS_SECRET
     )
     api_v1 = tweepy.API(auth)
-    
+    Thread(target=self_ping, daemon=True).start()
     # Post immediately after starting
     logger.info("Posting first tweet on startup...")
     post_random_waifu(api_v1)
