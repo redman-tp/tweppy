@@ -1,4 +1,4 @@
-import logging
+vimport logging
 import requests
 import pytz
 from flask import Flask
@@ -9,7 +9,7 @@ import os
 
 def keep_alive():
     def ping_self():
-        url = f"{RENDER_EXTERNAL_URL}/alive"
+        url = "https://genetic-josie-loganrustyy-24b417b3.koyeb.app/alive"
         try:
             response = requests.get(url)
             if response.status_code == 200:
