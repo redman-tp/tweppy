@@ -1,7 +1,8 @@
 apscheduler
 pymongo
 requests
-tweepy
+
 python-dotenv
+
 flask
 pytz
