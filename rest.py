@@ -3,9 +3,14 @@
 import os, requests, base64
 from pymongo import MongoClient
 from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # MongoDB setup
-client = MongoClient("mongodb+srv://dinnopy:Hv0WcReFf0PGPFwO@cluster0.aic2jaq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+MONGO_URI = os.getenv("MONGO_URI")
+client = MongoClient(MONGO_URI)
 db = client["twitter"]
 collection = db["tokens"]
 
