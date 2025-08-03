@@ -1,35 +1,16 @@
 import requests
-import tweepy
 import logging
 import os
 from rest import get_valid_token
 import random
 import time
 from datetime import datetime, timezone
-from threading import Thread
-from flasky import keep_alive
-
-keep_alive()
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Twitter V1.1 credentials
-V1_CONSUMER_KEY = os.getenv("V1_CONSUMER_KEY")
-V1_CONSUMER_SECRET = os.getenv("V1_CONSUMER_SECRET")
-V1_ACCESS_TOKEN = os.getenv("V1_ACCESS_TOKEN")
-V1_ACCESS_SECRET = os.getenv("V1_ACCESS_SECRET")
-
-# Twitter V2 Bearer + OAuth2.0 access token
-V2_BEARER_TOKEN = os.getenv("V2_BEARER_TOKEN")
-V2_ACCESS_TOKEN = os.getenv("V2_ACCESS_TOKEN")
-
-# Waifu API
-WAIFU_API_URL = "https://api.waifu.pics/nsfw/waifu"
-IMAGE_PATH = "waifu.jpg"
-
-# Captions
+# Captions to be used as tweets
 CAPTIONS = [
     "chundai ❤", 
     "good morning ☀️", 
@@ -41,15 +22,8 @@ CAPTIONS = [
     "hello sunshine 🌸"
 ]
 
-# Upload image via v1.1
-def upload_media_v1(api):
-    logger.info("Uploading media with v1.1 API...")
-    media = api.media_upload(IMAGE_PATH)
-    logger.info("Media uploaded. Media ID: %s", media.media_id_string)
-    return media.media_id_string
-
 # Post tweet via v2
-def post_tweet_v2(media_id, caption):
+def post_tweet(caption):
     logger.info("Posting tweet with v2 API...")
     try:
         token = get_valid_token()
@@ -58,63 +32,35 @@ def post_tweet_v2(media_id, caption):
             "Content-Type": "application/json"
         }
         payload = {
-            "text": caption,
-            "media": {
-                "media_ids": [media_id]
-            }
+            "text": caption
         }
         res = requests.post("https://api.twitter.com/2/tweets", headers=headers, json=payload)
-        if res.status_code == 201 or res.status_code == 200:
+        if res.status_code == 201:
             logger.info("Tweet posted successfully.")
         else:
             logger.error(f"Failed to post tweet: {res.status_code} - {res.text}")
     except Exception as e:
         logger.error(f"Token or tweet error: {e}")
 
-
-# Download image
-def fetch_and_save_image():
-    logger.info("Fetching image from waifu.pics...")
-    res = requests.get(WAIFU_API_URL)
-    res.raise_for_status()
-    image_url = res.json()["url"]
-    img_data = requests.get(image_url).content
-    with open(IMAGE_PATH, "wb") as handler:
-        handler.write(img_data)
-    logger.info("Image downloaded.")
-
 # Full post flow
-def post_random_waifu(api_v1):
+def post_random_text():
     try:
-        fetch_and_save_image()
-        media_id = upload_media_v1(api_v1)
         caption = random.choice(CAPTIONS)
-        post_tweet_v2(media_id, caption)
+        post_tweet(caption)
     except Exception as e:
         logger.error(f"Error during posting: {e}")
-    finally:
-        if os.path.exists(IMAGE_PATH):
-            os.remove(IMAGE_PATH)
-
 
 def main():
-    # Authenticate with v1.1
-    auth = tweepy.OAuth1UserHandler(
-        V1_CONSUMER_KEY, V1_CONSUMER_SECRET,
-        V1_ACCESS_TOKEN, V1_ACCESS_SECRET
-    )
-    api_v1 = tweepy.API(auth)
-    
     # Post immediately after starting
     logger.info("Posting first tweet on startup...")
-    post_random_waifu(api_v1)
+    post_random_text()
 
-    # Schedule 8 times a day (every 3 hours)
+    # Schedule to post every 2 hours
     while True:
-        for i in range(8):
-            logger.info(f"Scheduled post {i+1}/8 — {datetime.now(timezone.utc)}")
-            post_random_waifu(api_v1)
-            time.sleep(60 * 60 * 3)  # sleep for 3 hours
+        # Sleep for 2 hours before the next post
+        time.sleep(60 * 60 * 2)
+        logger.info(f"Scheduled post — {datetime.now(timezone.utc)}")
+        post_random_text()
 
 if __name__ == "__main__":
     main()
