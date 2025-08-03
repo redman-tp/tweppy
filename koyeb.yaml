@@ -1,0 +1,26 @@
+name: twitter-bot-webapp
+services:
+  - name: webapp
+    type: web
+    build:
+      type: buildpack
+    instance_type: nano
+    ports:
+      - port: 5000
+        protocol: http
+    env:
+      - key: MONGO_URI
+        scope: project
+      - key: CLIENT_ID
+        scope: project
+      - key: CLIENT_SECRET
+        scope: project
+      - key: REDIRECT_URI
+        scope: project
+    health_check:
+      http:
+        path: /
+        port: 5000
+    scaling:
+      min: 1
+      max: 1

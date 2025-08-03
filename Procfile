@@ -1,1 +1,1 @@
-bot: python tweppy.py
+web: python start.py
