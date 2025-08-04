@@ -242,6 +242,13 @@
         </div>
         
         <div class="content">
+            <!-- Database Status Warning -->
+            {% if not use_mongodb %}
+            <div class="alert alert-error">
+                ⚠️ <strong>Warning:</strong> MongoDB is unavailable. Using temporary in-memory storage. 
+                Data will be lost when the server restarts. Please check your database connection.
+            </div>
+            {% endif %}
             
             <!-- Flash Messages -->
             {% with messages = get_flashed_messages(with_categories=true) %}
