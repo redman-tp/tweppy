@@ -72,7 +72,7 @@ def add_tweets_to_queue(tweets):
     if not tweets:
         return 0
     
-    if USE_MONGODB and queue_collection:
+    if USE_MONGODB and queue_collection is not None:
         tweet_docs = []
         for tweet in tweets:
             tweet_docs.append({
@@ -96,7 +96,7 @@ def add_tweets_to_queue(tweets):
 
 def get_next_tweet():
     """Get the next unposted tweet from queue"""
-    if USE_MONGODB and queue_collection:
+    if USE_MONGODB and queue_collection is not None:
         return queue_collection.find_one({"posted": False}, sort=[("created_at", 1)])
     else:
         # Use in-memory storage
@@ -107,7 +107,7 @@ def get_next_tweet():
 
 def mark_tweet_posted(tweet_id):
     """Mark a tweet as posted and remove it from queue"""
-    if USE_MONGODB and queue_collection and stats_collection:
+    if USE_MONGODB and queue_collection is not None and stats_collection is not None:
         # Remove from queue
         queue_collection.delete_one({"_id": tweet_id})
         
@@ -125,7 +125,7 @@ def mark_tweet_posted(tweet_id):
 
 def get_queue_stats():
     """Get queue statistics"""
-    if USE_MONGODB and queue_collection and stats_collection:
+    if USE_MONGODB and queue_collection is not None and stats_collection is not None:
         unposted = queue_collection.count_documents({})
         
         # Get posted count from stats collection
@@ -166,7 +166,7 @@ def index():
     stats = get_queue_stats()
     
     # Get all unposted tweets for display
-    if USE_MONGODB and queue_collection:
+    if USE_MONGODB and queue_collection is not None:
         tweets = list(queue_collection.find({"posted": False}).sort("created_at", 1))
     else:
         tweets = [t for t in IN_MEMORY_QUEUE if not t.get("posted", False)]
