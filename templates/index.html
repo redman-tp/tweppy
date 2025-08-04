@@ -301,12 +301,12 @@
                 </div>
             </div>
             
-            <!-- Recent Tweets Section -->
-            {% if recent_tweets %}
+            <!-- Tweet Queue Section -->
+            {% if tweets %}
             <div class="section">
-                <h2>📋 Recent Tweets</h2>
+                <h2>📋 Tweet Queue</h2>
                 <div class="tweet-list">
-                    {% for tweet in recent_tweets %}
+                    {% for tweet in tweets %}
                     <div class="tweet-item">
                         <div class="tweet-text">"{{ tweet.text }}"</div>
                         <div class="tweet-meta">
