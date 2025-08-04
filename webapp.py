@@ -39,29 +39,22 @@ IN_MEMORY_QUEUE = []
 IN_MEMORY_STATS = {"posted_count": 0}
 USE_MONGODB = False
 
-# Try multiple MongoDB connection approaches
-connection_attempts = [
-    # Attempt 1: Basic connection without SSL
-    lambda: MongoClient(MONGO_URI.replace('ssl=true', 'ssl=false') if 'ssl=' in MONGO_URI else MONGO_URI + '&ssl=false'),
-    # Attempt 2: Connection with minimal SSL
-    lambda: MongoClient(MONGO_URI, tls=False, ssl=False),
-    # Attempt 3: Original connection string as-is
-    lambda: MongoClient(MONGO_URI),
-]
-
-client = None
-for i, attempt in enumerate(connection_attempts):
-    try:
-        print(f"Attempting MongoDB connection method {i+1}...")
-        test_client = attempt()
-        test_client.admin.command('ping')
-        client = test_client
-        USE_MONGODB = True
-        print(f"✅ MongoDB connection successful with method {i+1}")
-        break
-    except Exception as e:
-        print(f"❌ Connection method {i+1} failed: {e}")
-        continue
+# Try quick MongoDB connection (non-blocking startup)
+try:
+    print("Attempting quick MongoDB connection...")
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=2000,  # Very short timeout
+        connectTimeoutMS=2000,
+        socketTimeoutMS=2000
+    )
+    # Quick ping test
+    client.admin.command('ping')
+    USE_MONGODB = True
+    print("✅ MongoDB connection successful")
+except Exception as e:
+    print(f"❌ MongoDB connection failed: {str(e)[:100]}...")
+    client = None
 
 if USE_MONGODB and client:
     db = client["twitter"]

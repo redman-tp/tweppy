@@ -11,20 +11,18 @@ load_dotenv()
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Configure MongoDB client with SSL settings for production
+# Quick MongoDB connection (non-blocking)
 try:
     client = MongoClient(
         MONGO_URI,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=10000,
-        socketTimeoutMS=10000,
-        tls=True,
-        tlsAllowInvalidCertificates=True  # For compatibility with some hosting platforms
+        serverSelectionTimeoutMS=2000,  # Very short timeout
+        connectTimeoutMS=2000,
+        socketTimeoutMS=2000
     )
-    # Test the connection
+    # Quick ping test
     client.admin.command('ping')
 except Exception as e:
-    print(f"MongoDB connection error in rest.py: {e}")
+    print(f"MongoDB connection error in rest.py: {str(e)[:50]}...")
     # Fallback to basic connection
     client = MongoClient(MONGO_URI)
 
