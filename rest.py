@@ -11,20 +11,8 @@ load_dotenv()
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Quick MongoDB connection (non-blocking)
-try:
-    client = MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=2000,  # Very short timeout
-        connectTimeoutMS=2000,
-        socketTimeoutMS=2000
-    )
-    # Quick ping test
-    client.admin.command('ping')
-except Exception as e:
-    print(f"MongoDB connection error in rest.py: {str(e)[:50]}...")
-    # Fallback to basic connection
-    client = MongoClient(MONGO_URI)
+# MongoDB setup
+client = MongoClient(MONGO_URI)
 
 db = client["twitter"]
 collection = db["tokens"]

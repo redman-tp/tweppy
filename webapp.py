@@ -34,37 +34,11 @@ from pymongo import MongoClient
 
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Global variables for fallback storage
-IN_MEMORY_QUEUE = []
-IN_MEMORY_STATS = {"posted_count": 0}
-USE_MONGODB = False
-
-# Try quick MongoDB connection (non-blocking startup)
-try:
-    print("Attempting quick MongoDB connection...")
-    client = MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=2000,  # Very short timeout
-        connectTimeoutMS=2000,
-        socketTimeoutMS=2000
-    )
-    # Quick ping test
-    client.admin.command('ping')
-    USE_MONGODB = True
-    print("✅ MongoDB connection successful")
-except Exception as e:
-    print(f"❌ MongoDB connection failed: {str(e)[:100]}...")
-    client = None
-
-if USE_MONGODB and client:
-    db = client["twitter"]
-    queue_collection = db["tweet_queue"]
-    stats_collection = db["bot_stats"]
-    print("✅ Using MongoDB for data storage")
-else:
-    print("⚠️ MongoDB unavailable - using in-memory storage (data will not persist)")
-    queue_collection = None
-    stats_collection = None
+# MongoDB setup (back to original working version)
+client = MongoClient(MONGO_URI)
+db = client["twitter"]
+queue_collection = db["tweet_queue"]
+stats_collection = db["bot_stats"]
 
 def parse_tweets_from_input(input_text):
     """Parse tweets from input text, splitting by quotes"""
@@ -77,78 +51,47 @@ def parse_tweets_from_input(input_text):
     return tweets
 
 def add_tweets_to_queue(tweets):
-    """Add tweets to the queue (MongoDB or in-memory)"""
+    """Add tweets to the MongoDB queue"""
     if not tweets:
         return 0
     
-    if USE_MONGODB and queue_collection:
-        tweet_docs = []
-        for tweet in tweets:
-            tweet_docs.append({
-                "text": tweet,
-                "created_at": datetime.now(timezone.utc),
-                "posted": False
-            })
-        
-        result = queue_collection.insert_many(tweet_docs)
-        return len(result.inserted_ids)
-    else:
-        # Use in-memory storage
-        for tweet in tweets:
-            IN_MEMORY_QUEUE.append({
-                "_id": len(IN_MEMORY_QUEUE),
-                "text": tweet,
-                "created_at": datetime.now(timezone.utc),
-                "posted": False
-            })
-        return len(tweets)
+    tweet_docs = []
+    for tweet in tweets:
+        tweet_docs.append({
+            "text": tweet,
+            "created_at": datetime.now(timezone.utc),
+            "posted": False
+        })
+    
+    result = queue_collection.insert_many(tweet_docs)
+    return len(result.inserted_ids)
 
 def get_next_tweet():
     """Get the next unposted tweet from queue"""
-    if USE_MONGODB and queue_collection:
-        return queue_collection.find_one({"posted": False}, sort=[("created_at", 1)])
-    else:
-        # Use in-memory storage
-        for tweet in IN_MEMORY_QUEUE:
-            if not tweet.get("posted", False):
-                return tweet
-        return None
+    return queue_collection.find_one({"posted": False}, sort=[("created_at", 1)])
 
 def mark_tweet_posted(tweet_id):
     """Mark a tweet as posted and remove it from queue"""
-    if USE_MONGODB and queue_collection and stats_collection:
-        # Remove from queue
-        queue_collection.delete_one({"_id": tweet_id})
-        
-        # Increment posted counter
-        stats_collection.update_one(
-            {"_id": "posted_count"},
-            {"$inc": {"count": 1}},
-            upsert=True
-        )
-    else:
-        # Use in-memory storage
-        global IN_MEMORY_QUEUE, IN_MEMORY_STATS
-        IN_MEMORY_QUEUE = [t for t in IN_MEMORY_QUEUE if t["_id"] != tweet_id]
-        IN_MEMORY_STATS["posted_count"] += 1
+    # Remove from queue
+    queue_collection.delete_one({"_id": tweet_id})
+    
+    # Increment posted counter
+    stats_collection.update_one(
+        {"_id": "posted_count"},
+        {"$inc": {"count": 1}},
+        upsert=True
+    )
 
 def get_queue_stats():
     """Get queue statistics"""
-    if USE_MONGODB and queue_collection and stats_collection:
-        unposted = queue_collection.count_documents({})
-        
-        # Get posted count from stats collection
-        posted_doc = stats_collection.find_one({"_id": "posted_count"})
-        posted = posted_doc["count"] if posted_doc else 0
-        
-        total = unposted + posted
-        return {"total": total, "unposted": unposted, "posted": posted}
-    else:
-        # Use in-memory storage
-        unposted = len([t for t in IN_MEMORY_QUEUE if not t.get("posted", False)])
-        posted = IN_MEMORY_STATS["posted_count"]
-        total = unposted + posted
-        return {"total": total, "unposted": unposted, "posted": posted}
+    unposted = queue_collection.count_documents({})
+    
+    # Get posted count from stats collection
+    posted_doc = stats_collection.find_one({"_id": "posted_count"})
+    posted = posted_doc["count"] if posted_doc else 0
+    
+    total = unposted + posted
+    return {"total": total, "unposted": unposted, "posted": posted}
 
 def post_tweet(caption):
     """Post tweet using Twitter API v2"""
@@ -172,16 +115,14 @@ def post_tweet(caption):
 # Web routes
 @app.route('/')
 def index():
-    """Main dashboard"""
     stats = get_queue_stats()
     
-    if USE_MONGODB and queue_collection:
-        recent_tweets = list(queue_collection.find({}, sort=[("created_at", -1)]).limit(10))
-    else:
-        # Use in-memory storage
-        recent_tweets = sorted(IN_MEMORY_QUEUE, key=lambda x: x["created_at"], reverse=True)[:10]
+    # Get all unposted tweets for display
+    tweets = list(queue_collection.find({"posted": False}).sort("created_at", 1))
     
-    return render_template('index.html', stats=stats, recent_tweets=recent_tweets, use_mongodb=USE_MONGODB)
+    return render_template('index.html', 
+                         stats=stats, 
+                         tweets=tweets)
 
 @app.route('/add_tweets', methods=['POST'])
 def add_tweets():
