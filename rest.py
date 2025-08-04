@@ -10,7 +10,24 @@ load_dotenv()
 
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI")
-client = MongoClient(MONGO_URI)
+
+# Configure MongoDB client with SSL settings for production
+try:
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=10000,
+        tls=True,
+        tlsAllowInvalidCertificates=True  # For compatibility with some hosting platforms
+    )
+    # Test the connection
+    client.admin.command('ping')
+except Exception as e:
+    print(f"MongoDB connection error in rest.py: {e}")
+    # Fallback to basic connection
+    client = MongoClient(MONGO_URI)
+
 db = client["twitter"]
 collection = db["tokens"]
 

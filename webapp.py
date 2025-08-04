@@ -33,7 +33,25 @@ TOKEN_URL = "https://api.twitter.com/2/oauth2/token"
 from pymongo import MongoClient
 
 MONGO_URI = os.getenv("MONGO_URI")
-client = MongoClient(MONGO_URI)
+
+# Configure MongoDB client with SSL settings for production
+try:
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=10000,
+        tls=True,
+        tlsAllowInvalidCertificates=True  # For compatibility with some hosting platforms
+    )
+    # Test the connection
+    client.admin.command('ping')
+    print("✅ MongoDB connection successful")
+except Exception as e:
+    print(f"❌ MongoDB connection failed: {e}")
+    # Fallback to basic connection
+    client = MongoClient(MONGO_URI)
+
 db = client["twitter"]
 queue_collection = db["tweet_queue"]
 stats_collection = db["bot_stats"]
