@@ -176,6 +176,11 @@ def index():
                          tweets=tweets,
                          use_mongodb=USE_MONGODB)
 
+@app.route('/keepalive')
+def keepalive():
+    """An endpoint to keep the server alive on free hosting services."""
+    return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()})
+
 @app.route('/add_tweets', methods=['POST'])
 def add_tweets():
     """Add tweets to queue from form input"""
