@@ -36,6 +36,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 
 # Global variables for fallback storage
 IN_MEMORY_QUEUE = []
+IN_MEMORY_HISTORY = []
 IN_MEMORY_STATS = {"posted_count": 0}
 USE_MONGODB = False
 
@@ -47,6 +48,7 @@ try:
     client.admin.command('ping')
     db = client["twitter"]
     queue_collection = db["tweet_queue"]
+    history_collection = db["post_history"]
     stats_collection = db["bot_stats"]
     USE_MONGODB = True
     print("✅ MongoDB connection successful!")
@@ -105,23 +107,24 @@ def get_next_tweet():
                 return tweet
         return None
 
-def mark_tweet_posted(tweet_id):
-    """Mark a tweet as posted and remove it from queue"""
-    if USE_MONGODB and queue_collection is not None and stats_collection is not None:
+def mark_tweet_posted(tweet_id, tweet_text):
+    """Move a tweet from queue to history and mark as posted."""
+    if USE_MONGODB and queue_collection is not None and history_collection is not None:
+        # Add to history with a timestamp
+        history_collection.insert_one({
+            "text": tweet_text,
+            "posted_at": datetime.now(timezone.utc)
+        })
         # Remove from queue
         queue_collection.delete_one({"_id": tweet_id})
-        
-        # Increment posted counter
-        stats_collection.update_one(
-            {"_id": "posted_count"},
-            {"$inc": {"count": 1}},
-            upsert=True
-        )
     else:
         # Use in-memory storage
-        global IN_MEMORY_QUEUE, IN_MEMORY_STATS
+        global IN_MEMORY_QUEUE, IN_MEMORY_HISTORY
+        IN_MEMORY_HISTORY.append({
+            "text": tweet_text,
+            "posted_at": datetime.now(timezone.utc)
+        })
         IN_MEMORY_QUEUE = [t for t in IN_MEMORY_QUEUE if t["_id"] != tweet_id]
-        IN_MEMORY_STATS["posted_count"] += 1
 
 def get_queue_stats():
     """Get queue statistics"""
@@ -166,14 +169,17 @@ def index():
     stats = get_queue_stats()
     
     # Get all unposted tweets for display
-    if USE_MONGODB and queue_collection is not None:
-        tweets = list(queue_collection.find({"posted": False}).sort("created_at", 1))
+    if USE_MONGODB and queue_collection is not None and history_collection is not None:
+        tweets = list(queue_collection.find().sort("created_at", 1))
+        history = list(history_collection.find().sort("posted_at", -1).limit(50))
     else:
         tweets = [t for t in IN_MEMORY_QUEUE if not t.get("posted", False)]
-    
+        history = sorted(IN_MEMORY_HISTORY, key=lambda x: x['posted_at'], reverse=True)[:50]
+
     return render_template('index.html', 
                          stats=stats, 
                          tweets=tweets,
+                         history=history,
                          use_mongodb=USE_MONGODB)
 
 @app.route('/keepalive')
@@ -183,22 +189,34 @@ def keepalive():
 
 @app.route('/add_tweets', methods=['POST'])
 def add_tweets():
-    """Add tweets to queue from form input"""
-    input_text = request.form.get('tweets_input', '').strip()
-    
-    if not input_text:
-        flash('Please enter some tweets in quotes!', 'error')
+    if not session.get('oauth_token'):
+        return redirect(url_for('login'))
+
+    action = request.form.get('action')
+    tweets_input = request.form.get('tweets_input', '')
+    tweet_texts = parse_tweets_from_input(tweets_input)
+
+    if not tweet_texts:
+        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
         return redirect(url_for('index'))
-    
-    tweets = parse_tweets_from_input(input_text)
-    
-    if not tweets:
-        flash('No tweets found! Make sure to put each tweet in quotes like "Hello world"', 'error')
-        return redirect(url_for('index'))
-    
-    added_count = add_tweets_to_queue(tweets)
-    flash(f'Successfully added {added_count} tweets to the queue!', 'success')
-    
+
+    if action == 'post':
+        # Post the first tweet immediately
+        tweet_to_post = tweet_texts.pop(0)
+        success, message = post_tweet(tweet_to_post)
+        if success:
+            mark_tweet_posted(None, tweet_to_post)  # None for ID as it wasn't in DB
+            flash('Tweet posted successfully!', 'success')
+        else:
+            flash(f'Error posting tweet: {message}', 'error')
+            # Add it back to the list to be queued if posting fails
+            tweet_texts.insert(0, tweet_to_post)
+
+    # Add remaining tweets (or all if action was 'queue') to the queue
+    if tweet_texts:
+        added_count = add_tweets_to_queue(tweet_texts)
+        flash(f'{added_count} tweet(s) added to the queue!', 'success')
+
     return redirect(url_for('index'))
 
 @app.route('/post_next', methods=['POST'])
@@ -213,7 +231,7 @@ def post_next():
     success, message = post_tweet(next_tweet['text'])
     
     if success:
-        mark_tweet_posted(next_tweet['_id'])
+        mark_tweet_posted(next_tweet['_id'], next_tweet['text'])
         flash(f'Posted: "{next_tweet["text"]}"', 'success')
     else:
         flash(f'Failed to post tweet: {message}', 'error')
@@ -223,14 +241,110 @@ def post_next():
 @app.route('/clear_queue', methods=['POST'])
 def clear_queue():
     """Clear all tweets from queue"""
-    result = queue_collection.delete_many({})
-    flash(f'Cleared {result.deleted_count} tweets from queue', 'info')
+    if USE_MONGODB and queue_collection is not None:
+        result = queue_collection.delete_many({})
+        flash(f'Cleared {result.deleted_count} tweets from queue', 'info')
+    else:
+        global IN_MEMORY_QUEUE
+        cleared_count = len(IN_MEMORY_QUEUE)
+        IN_MEMORY_QUEUE = []
+        flash(f'Cleared {cleared_count} tweets from queue', 'info')
     return redirect(url_for('index'))
 
 @app.route('/api/stats')
 def api_stats():
     """API endpoint for queue stats"""
     return jsonify(get_queue_stats())
+
+@app.route('/delete_tweet/<tweet_id>', methods=['POST'])
+def delete_tweet(tweet_id):
+    """Delete a single tweet from the queue."""
+    if USE_MONGODB and queue_collection is not None:
+        from bson.objectid import ObjectId
+        result = queue_collection.delete_one({'_id': ObjectId(tweet_id)})
+        if result.deleted_count == 0:
+            flash('Tweet not found or already deleted.', 'error')
+        else:
+            flash('Tweet successfully deleted.', 'success')
+    else:
+        global IN_MEMORY_QUEUE
+        original_len = len(IN_MEMORY_QUEUE)
+        IN_MEMORY_QUEUE = [t for t in IN_MEMORY_QUEUE if str(t['_id']) != tweet_id]
+        if len(IN_MEMORY_QUEUE) < original_len:
+            flash('Tweet successfully deleted.', 'success')
+        else:
+            flash('Tweet not found or already deleted.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/update_tweet/<tweet_id>', methods=['POST'])
+def update_tweet(tweet_id):
+    """Update the text of a single tweet in the queue."""
+    new_text = request.form.get('new_text', '').strip()
+    if not new_text:
+        flash('Tweet text cannot be empty.', 'error')
+        return redirect(url_for('index'))
+
+    if USE_MONGODB and queue_collection is not None:
+        from bson.objectid import ObjectId
+        result = queue_collection.update_one(
+            {'_id': ObjectId(tweet_id)},
+            {'$set': {'text': new_text}}
+        )
+        if result.matched_count == 0:
+            flash('Tweet not found.', 'error')
+        else:
+            flash('Tweet updated successfully.', 'success')
+    else:
+        global IN_MEMORY_QUEUE
+        for tweet in IN_MEMORY_QUEUE:
+            if str(tweet['_id']) == tweet_id:
+                tweet['text'] = new_text
+                flash('Tweet updated successfully.', 'success')
+                return redirect(url_for('index'))
+        flash('Tweet not found.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/post_tweet/<tweet_id>', methods=['POST'])
+def post_specific_tweet(tweet_id):
+    if not session.get('oauth_token'):
+        return redirect(url_for('login'))
+
+    tweet_to_post = None
+    if USE_MONGODB and queue_collection is not None:
+        tweet_to_post = queue_collection.find_one({'_id': ObjectId(tweet_id)})
+    else:
+        for tweet in IN_MEMORY_QUEUE:
+            if str(tweet.get('_id')) == tweet_id:
+                tweet_to_post = tweet
+                break
+
+    if not tweet_to_post:
+        flash('Tweet not found in queue.', 'error')
+        return redirect(url_for('index'))
+
+    success, message = post_tweet(tweet_to_post['text'])
+
+    if success:
+        mark_tweet_posted(tweet_id, tweet_to_post['text'])
+        flash('Tweet posted successfully!', 'success')
+    else:
+        flash(f'Failed to post tweet: {message}', 'error')
+
+    return redirect(url_for('index'))
+
+@app.route('/clear_history', methods=['POST'])
+def clear_history():
+    """Clear all tweets from the post history."""
+    if USE_MONGODB and history_collection is not None:
+        result = history_collection.delete_many({})
+        flash(f'Cleared {result.deleted_count} tweets from history.', 'info')
+    else:
+        global IN_MEMORY_HISTORY
+        cleared_count = len(IN_MEMORY_HISTORY)
+        IN_MEMORY_HISTORY = []
+        flash(f'Cleared {cleared_count} tweets from history.', 'info')
+    return redirect(url_for('index'))
+
 
 # Auto-posting background thread
 posting_active = False

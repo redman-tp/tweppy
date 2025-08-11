@@ -3,339 +3,307 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Twitter Bot Dashboard</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            background: #f8f9fa;
-            padding: 20px;
-            border-bottom: 1px solid #e9ecef;
-        }
-        
-        .stat-item {
-            text-align: center;
-        }
-        
-        .stat-number {
-            font-size: 2em;
-            font-weight: bold;
-            color: #1da1f2;
-        }
-        
-        .stat-label {
-            color: #6c757d;
-            font-size: 0.9em;
-        }
-        
-        .content {
-            padding: 30px;
-        }
-        
-        .section {
-            margin-bottom: 30px;
-        }
-        
-        .section h2 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1.5em;
-        }
-        
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-        }
-        
-        .tweets-input {
-            width: 100%;
-            min-height: 120px;
-            padding: 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            font-size: 16px;
-            resize: vertical;
-            transition: border-color 0.3s;
-        }
-        
-        .tweets-input:focus {
-            outline: none;
-            border-color: #1da1f2;
-        }
-        
-        .help-text {
-            font-size: 0.9em;
-            color: #6c757d;
-            margin-top: 5px;
-        }
-        
-        .btn {
-            background: linear-gradient(135deg, #1da1f2 0%, #0d8bd9 100%);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(29, 161, 242, 0.4);
-        }
-        
-        .btn-secondary {
-            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-        }
-        
-        .btn-danger {
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-        }
-        
-        .alert {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: 500;
-        }
-        
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-        
-        .tweet-list {
-            max-height: 300px;
-            overflow-y: auto;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-        }
-        
-        .tweet-item {
-            padding: 15px;
-            border-bottom: 1px solid #e9ecef;
-            background: #f8f9fa;
-        }
-        
-        .tweet-item:last-child {
-            border-bottom: none;
-        }
-        
-        .tweet-text {
-            font-size: 16px;
-            margin-bottom: 8px;
-        }
-        
-        .tweet-meta {
-            font-size: 0.8em;
-            color: #6c757d;
-        }
-        
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        .auto-post-status {
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-weight: 500;
-        }
-        
-        .status-active {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .status-inactive {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-    </style>
+    <title>Tweppy - Modern Twitter Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/modern.css') }}">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🐦 Twitter Bot Dashboard</h1>
-            <p>Manage your tweet queue with ease</p>
-        </div>
-        
-        <div class="stats">
-            <div class="stat-item">
-                <div class="stat-number">{{ stats.total }}</div>
-                <div class="stat-label">Total Tweets</div>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i class="fa-brands fa-twitter"></i>
+                <span>Tweppy</span>
             </div>
-            <div class="stat-item">
-                <div class="stat-number">{{ stats.unposted }}</div>
-                <div class="stat-label">In Queue</div>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#" class="nav-link active" data-tab="dashboard-content">
+                        <i class="fa-solid fa-table-columns"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-tab="analytics-content">
+                        <i class="fa-solid fa-chart-simple"></i>
+                        <span>Analytics</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-tab="scheduler-content">
+                        <i class="fa-solid fa-calendar-days"></i>
+                        <span>Scheduler</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-tab="settings-content">
+                        <i class="fa-solid fa-gear"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+            </ul>
+            <div class="footer-status">
+                {% if use_mongodb %}
+                    <span class="dot online"></span> MongoDB Connected
+                {% else %}
+                    <span class="dot offline"></span> DB Connection Failed
+                {% endif %}
             </div>
-            <div class="stat-item">
-                <div class="stat-number">{{ stats.posted }}</div>
-                <div class="stat-label">Posted</div>
-            </div>
-        </div>
-        
-        <div class="content">
-            <!-- Database Status Warning -->
-            {% if not use_mongodb %}
-            <div class="alert alert-error">
-                ⚠️ <strong>Warning:</strong> MongoDB is unavailable. Using temporary in-memory storage. 
-                Data will be lost when the server restarts. Please check your database connection.
-            </div>
-            {% endif %}
-            
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
             <!-- Flash Messages -->
+            <div class="flash-messages">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                        <div class="alert alert-{{ category }}">{{ message }}<span class="close-alert">&times;</span></div>
                     {% endfor %}
                 {% endif %}
             {% endwith %}
-            
-            <!-- Add Tweets Section -->
-            <div class="section">
-                <h2>📝 Add New Tweets</h2>
-                <form method="POST" action="/add_tweets">
-                    <div class="input-group">
-                        <label for="tweets_input">Enter your tweets (each in quotes):</label>
-                        <textarea 
-                            id="tweets_input" 
-                            name="tweets_input" 
-                            class="tweets-input" 
-                            placeholder='"Hello world!" "This is my second tweet" "And here\'s another one!"'
-                        ></textarea>
-                        <div class="help-text">
-                            💡 Put each tweet in quotes. Example: "First tweet" "Second tweet" "Third tweet"
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard-content" class="tab-content active">
+                <header>
+                    <h1>Dashboard</h1>
+                </header>
+                <div id="dashboard-layout" class="dashboard-left-right-container">
+                    <div class="dashboard-left">
+                        <div class="card stats-card">
+                            <h2><i class="fa-solid fa-chart-pie"></i> Statistics</h2>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <p id="stats-total" class="stat-number">{{ stats.total }}</p>
+                                    <p class="stat-label">Total Tweets</p>
+                                </div>
+                                <div class="stat-item">
+                                    <p id="stats-queued" class="stat-number">{{ stats.unposted }}</p>
+                                    <p class="stat-label">In Queue</p>
+                                </div>
+                                <div class="stat-item">
+                                    <p id="stats-posted" class="stat-number">{{ stats.posted }}</p>
+                                    <p class="stat-label">Posted</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card tweet-form-card">
+                             <h2><i class="fa-solid fa-pen-to-square"></i> Compose & Queue</h2>
+                            <form id="tweet-form" action="/add_tweets" method="post">
+                                <textarea id="tweet-input" name="tweets_input" placeholder='"A new tweet..." "And another one..."'></textarea>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Add to Queue</button>
+                                    <form action="{{ url_for('post_next') }}" method="POST" style="display: inline;">
+                                        <button type="submit" class="btn btn-secondary">Post Next Tweet</button>
+                                    </form>
+                                </div>
+                            </form>
+                            <button type="button" class="btn btn-secondary">Schedule</button> <!-- Placeholder -->
                         </div>
                     </div>
-                    <button type="submit" class="btn">Add to Queue</button>
-                </form>
-            </div>
-            
-            <!-- Controls Section -->
-            <div class="section">
-                <h2>🎮 Controls</h2>
-                <div class="controls">
-                    <form method="POST" action="/post_next" style="display: inline;">
-                        <button type="submit" class="btn btn-success">Post Next Tweet</button>
-                    </form>
-                    
-                    <form method="POST" action="/start_auto_posting" style="display: inline;">
-                        <button type="submit" class="btn">Start Auto-Posting</button>
-                    </form>
-                    
-                    <form method="POST" action="/stop_auto_posting" style="display: inline;">
-                        <button type="submit" class="btn btn-secondary">Stop Auto-Posting</button>
-                    </form>
-                    
-                    <form method="POST" action="/clear_queue" style="display: inline;" onsubmit="return confirm('Are you sure you want to clear all tweets?')">
-                        <button type="submit" class="btn btn-danger">Clear Queue</button>
-                    </form>
-                </div>
-            </div>
-            
-            <!-- Tweet Queue Section -->
-            {% if tweets %}
-            <div class="section">
-                <h2>📋 Tweet Queue</h2>
-                <div class="tweet-list">
-                    {% for tweet in tweets %}
-                    <div class="tweet-item">
-                        <div class="tweet-text">"{{ tweet.text }}"</div>
-                        <div class="tweet-meta">
-                            Added: {{ tweet.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
-                            {% if tweet.posted %}
-                                | ✅ Posted
-                            {% else %}
-                                | ⏳ In Queue
-                            {% endif %}
+                    <div class="dashboard-right">
+                        <div class="card tabbed-card">
+                            <div class="card-tabs">
+                                <button class="card-tab-link active" data-tab="queue-tab"><i class="fa-solid fa-list-check"></i> Queue ({{ stats.unposted }})</button>
+                                <button class="card-tab-link" data-tab="history-tab"><i class="fa-solid fa-clock-rotate-left"></i> History ({{ history|length }})</button>
+                            </div>
+
+                            <div id="queue-tab" class="card-tab-content active">
+                                <div class="card-header">
+                                    <h3>Tweet Queue</h3>
+                                    {% if tweets %}
+                                    <form action="{{ url_for('clear_queue') }}" method="POST" onsubmit="return confirm('Are you sure you want to clear the entire queue?');">
+                                        <button type="submit" class="btn btn-danger btn-small">Clear All</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                <div class="card-content">
+                                    <div class="tweet-queue-container">
+                                        {% for tweet in tweets %}
+                                        <div class="tweet-item">
+                                            <p>"{{ tweet.text }}"</p>
+                                            <div class="fab-container">
+                                                <div class="fab-main">
+                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                </div>
+                                                <div class="fab-actions">
+                                                    <form action="{{ url_for('post_specific_tweet', tweet_id=tweet._id) }}" method="POST" style="display: inline;">
+                                                        <button type="submit" class="btn btn-primary btn-small btn-icon" title="Post Now"><i class="fa-solid fa-paper-plane"></i></button>
+                                                    </form>
+                                                    <button class="btn btn-secondary btn-small btn-icon btn-edit" data-tweet-id="{{ tweet._id }}" data-tweet-text="{{ tweet.text }}" title="Edit Tweet"><i class="fa-solid fa-pencil"></i></button>
+                                                    <form action="{{ url_for('delete_tweet', tweet_id=tweet._id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this tweet?');">
+                                                        <button type="submit" class="btn btn-danger btn-small btn-icon" title="Delete Tweet"><i class="fa-solid fa-trash"></i></button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <p class="empty-message">The queue is empty. Add some tweets!</p>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="history-tab" class="card-tab-content">
+                                <div class="card-header">
+                                    <h3>Post History</h3>
+                                    {% if history %}
+                                    <form action="{{ url_for('clear_history') }}" method="POST" onsubmit="return confirm('Are you sure you want to clear all post history?');">
+                                        <button type="submit" class="btn btn-danger btn-small">Clear History</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                                <div class="card-content post-history-container">
+                                    {% for post in history %}
+                                    <div class="history-item">
+                                        <p>"{{ post.text }}"</p>
+                                        <span class="timestamp">{{ post.posted_at.strftime('%b %d, %H:%M') }} UTC</span>
+                                    </div>
+                                    {% else %}
+                                    <p class="empty-message">No posts in your history yet.</p>
+                                    {% endfor %}
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    {% endfor %}
                 </div>
             </div>
-            {% endif %}
-        </div>
+
+            <!-- Analytics Tab (Placeholder) -->
+            <div id="analytics-content" class="tab-content" style="display: none;">
+                <header><h1>Analytics</h1></header>
+                <div class="placeholder-content">
+                    <i class="fa-solid fa-chart-simple"></i>
+                    <p>Advanced analytics and performance metrics will be available here.</p>
+                </div>
+            </div>
+
+            <!-- Scheduler Tab (Placeholder) -->
+            <div id="scheduler-content" class="tab-content" style="display: none;">
+                <header><h1>Scheduler</h1></header>
+                <div class="placeholder-content">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <p>A calendar-based tweet scheduler will be implemented here.</p>
+                </div>
+            </div>
+
+            <!-- Settings Tab (Placeholder) -->
+            <div id="settings-content" class="tab-content" style="display: none;">
+                <header><h1>Settings</h1></header>
+                <div class="placeholder-content">
+                    <i class="fa-solid fa-gear"></i>
+                    <p>Application settings and configurations will be available here.</p>
+                </div>
+            </div>
+        </main>
     </div>
-    
+
+    <!-- Edit Tweet Modal -->
+    <div id="edit-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-button">&times;</span>
+        <h2>Edit Tweet</h2>
+        <form id="edit-form" method="POST">
+          <textarea id="edit-textarea" name="new_text" rows="4" required></textarea>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+      </div>
+    </div>
+
     <script>
-        // Auto-refresh stats every 30 seconds
-        setInterval(function() {
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {
-                    document.querySelector('.stat-number').textContent = data.total;
-                    document.querySelectorAll('.stat-number')[1].textContent = data.unposted;
-                    document.querySelectorAll('.stat-number')[2].textContent = data.posted;
+        document.addEventListener('DOMContentLoaded', function() {
+            // Main tabs
+            const mainTabLinks = document.querySelectorAll('.nav-link');
+            const mainTabContents = document.querySelectorAll('.tab-content');
+
+            mainTabLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    mainTabLinks.forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+
+                    const tabId = this.getAttribute('data-tab');
+                    mainTabContents.forEach(content => {
+                        content.style.display = content.id === tabId ? 'block' : 'none';
+                    });
                 });
-        }, 30000);
+            });
+
+            // In-card tabs for Queue/History
+            const cardTabLinks = document.querySelectorAll('.card-tab-link');
+            const cardTabContents = document.querySelectorAll('.card-tab-content');
+
+            cardTabLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    cardTabLinks.forEach(l => l.classList.remove('active'));
+                    this.classList.add('active');
+
+                    const tabId = this.getAttribute('data-tab');
+                    cardTabContents.forEach(content => {
+                        if (content.id === tabId) {
+                            content.classList.add('active');
+                        } else {
+                            content.classList.remove('active');
+                        }
+                    });
+                });
+            });
+
+            // Dismissible alerts
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    if (alert) {
+                        alert.style.transition = 'opacity 0.5s ease';
+                        alert.style.opacity = '0';
+                        setTimeout(() => alert.remove(), 500);
+                    }
+                }, 5000);
+
+                // Manual dismiss
+                const closeBtn = alert.querySelector('.close-alert');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', function() {
+                        if (alert) {
+                            alert.style.transition = 'opacity 0.5s ease';
+                            alert.style.opacity = '0';
+                            setTimeout(() => alert.remove(), 500);
+                        }
+                    });
+                }
+            });
+
+            // Modal handling
+            const modal = document.getElementById('edit-modal');
+            const closeButton = document.querySelector('.close-button');
+            const editForm = document.getElementById('edit-form');
+            const tweetIdInput = document.getElementById('edit-tweet-id');
+            const tweetTextInput = document.getElementById('edit-tweet-text');
+
+            document.querySelectorAll('.btn-edit').forEach(button => {
+                button.addEventListener('click', function() {
+                    const tweetId = this.getAttribute('data-tweet-id');
+                    const tweetText = this.getAttribute('data-tweet-text');
+
+                    tweetIdInput.value = tweetId;
+                    tweetTextInput.value = tweetText;
+                    editForm.action = `/update_tweet/${tweetId}`;
+                    modal.style.display = 'block';
+                });
+            });
+
+            if (closeButton) {
+                closeButton.onclick = function() {
+                    modal.style.display = 'none';
+                }
+            }
+
+            window.onclick = function(event) {
+                if (event.target == modal) {
+                    modal.style.display = 'none';
+                }
+            }
+        });
     </script>
 </body>
 </html>
