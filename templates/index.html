@@ -87,24 +87,37 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Action Buttons Card -->
+                        <div class="card actions-card">
+                            <h2><i class="fa-solid fa-bolt"></i> Actions</h2>
+                            <div class="form-actions">
+                                <form action="{{ url_for('start_auto_posting') }}" method="POST" style="display:inline-block; margin-right:8px;">
+                                    <button type="submit" class="btn btn-success">Start Auto Post</button>
+                                </form>
+                                <form action="{{ url_for('stop_auto_posting') }}" method="POST" style="display:inline-block; margin-right:8px;">
+                                    <button type="submit" class="btn btn-warning">Pause Auto Post</button>
+                                </form>
+                                <form action="{{ url_for('clear_stats') }}" method="POST" style="display:inline-block;">
+                                    <button type="submit" class="btn btn-danger">Clear Stats</button>
+                                </form>
+                                <button type="button" id="open-schedule" class="btn btn-secondary" style="margin-left:8px;">Schedule</button>
+                            </div>
+                        </div>
                         <div class="card tweet-form-card">
                              <h2><i class="fa-solid fa-pen-to-square"></i> Compose & Queue</h2>
                             <form id="tweet-form" action="/add_tweets" method="post">
                                 <textarea id="tweet-input" name="tweets_input" placeholder='"A new tweet..." "And another one..."'></textarea>
                                 <div class="form-actions">
-                                    <button type="submit" class="btn btn-primary">Add to Queue</button>
-                                    <form action="{{ url_for('post_next') }}" method="POST" style="display: inline;">
-                                        <button type="submit" class="btn btn-secondary">Post Next Tweet</button>
-                                    </form>
+                                    <button type="submit" name="action" value="queue" class="btn btn-primary">Add to Queue</button>
                                 </div>
                             </form>
-                            <button type="button" class="btn btn-secondary">Schedule</button> <!-- Placeholder -->
                         </div>
                     </div>
                     <div class="dashboard-right">
                         <div class="card tabbed-card">
                             <div class="card-tabs">
                                 <button class="card-tab-link active" data-tab="queue-tab"><i class="fa-solid fa-list-check"></i> Queue ({{ stats.unposted }})</button>
+                                <button class="card-tab-link" data-tab="scheduled-tab"><i class="fa-solid fa-calendar-days"></i> Scheduled ({{ scheduled_count }})</button>
                                 <button class="card-tab-link" data-tab="history-tab"><i class="fa-solid fa-clock-rotate-left"></i> History ({{ history|length }})</button>
                             </div>
 
@@ -144,6 +157,35 @@
                                 </div>
                             </div>
 
+                            <div id="scheduled-tab" class="card-tab-content">
+                                <div class="card-header">
+                                    <h3>Scheduled Tweets</h3>
+                                </div>
+                                <div class="card-content">
+                                    <div class="tweet-queue-container">
+                                        {% for item in scheduled %}
+                                        <div class="tweet-item" style="position: relative; display:block;">
+                                            <div class="timestamp ts" data-iso="{{ item.scheduled_at.isoformat() }}" style="opacity:0.7; font-size: 0.9em; margin-bottom:6px;"></div>
+                                            <div class="fab-container" style="position: absolute; right: 8px; top: 8px;">
+                                                <div class="fab-main">
+                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                </div>
+                                                <div class="fab-actions">
+                                                    <button class="btn btn-secondary btn-small btn-icon btn-edit-scheduled" data-sid="{{ item._id }}" data-text="{{ item.text }}" data-iso="{{ item.scheduled_at.isoformat() }}" title="Edit Scheduled"><i class="fa-solid fa-pencil"></i></button>
+                                                    <form action="{{ url_for('delete_scheduled', sid=item._id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Cancel this scheduled tweet?');">
+                                                        <button type="submit" class="btn btn-danger btn-small btn-icon" title="Cancel"><i class="fa-solid fa-trash"></i></button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                            <p>"{{ item.text }}"</p>
+                                        </div>
+                                        {% else %}
+                                        <p class="empty-message">No scheduled tweets.</p>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
                             <div id="history-tab" class="card-tab-content">
                                 <div class="card-header">
                                     <h3>Post History</h3>
@@ -155,9 +197,9 @@
                                 </div>
                                 <div class="card-content post-history-container">
                                     {% for post in history %}
-                                    <div class="history-item">
+                                    <div class="history-item" style="display:block;">
+                                        <div class="timestamp ts" data-iso="{{ post.posted_at.isoformat() }}" style="opacity:0.7; font-size: 0.9em; margin-bottom:6px;"></div>
                                         <p>"{{ post.text }}"</p>
-                                        <span class="timestamp">{{ post.posted_at.strftime('%b %d, %H:%M') }} UTC</span>
                                     </div>
                                     {% else %}
                                     <p class="empty-message">No posts in your history yet.</p>
@@ -204,8 +246,46 @@
         <span class="close-button">&times;</span>
         <h2>Edit Tweet</h2>
         <form id="edit-form" method="POST">
-          <textarea id="edit-textarea" name="new_text" rows="4" required></textarea>
+          <input type="hidden" id="edit-tweet-id" />
+          <textarea id="edit-tweet-text" name="new_text" rows="4" required></textarea>
           <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Schedule Modal -->
+    <div id="schedule-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-button schedule-close">&times;</span>
+        <h2>Schedule Tweet</h2>
+        <form id="schedule-form" action="{{ url_for('schedule') }}" method="POST">
+          <label for="schedule-text" style="display:block; margin-bottom:6px;">Tweet</label>
+          <textarea id="schedule-text" name="scheduled_text" rows="4" placeholder='Your tweet' required></textarea>
+          <label for="schedule-datetime" style="display:block; margin:12px 0 6px;">Schedule Time</label>
+          <input id="schedule-datetime" name="scheduled_at" type="datetime-local" required />
+          <input type="hidden" id="schedule-datetime-utc" name="scheduled_at_utc" />
+          <div style="margin-top:14px;">
+            <button type="submit" class="btn btn-primary">Schedule</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Scheduled Modal -->
+    <div id="edit-scheduled-modal" class="modal">
+      <div class="modal-content">
+        <span class="close-button edit-scheduled-close">&times;</span>
+        <h2>Edit Scheduled Tweet</h2>
+        <form id="edit-scheduled-form" method="POST">
+          <input type="hidden" id="edit-scheduled-sid" />
+          <label for="edit-scheduled-text" style="display:block; margin-bottom:6px;">Tweet</label>
+          <textarea id="edit-scheduled-text" name="scheduled_text" rows="4" required></textarea>
+          <label for="edit-scheduled-datetime" style="display:block; margin:12px 0 6px;">Schedule Time</label>
+          <input id="edit-scheduled-datetime" name="scheduled_at" type="datetime-local" required />
+          <input type="hidden" id="edit-scheduled-datetime-utc" name="scheduled_at_utc" />
+          <div style="margin-top:14px;">
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
         </form>
       </div>
     </div>
@@ -273,9 +353,9 @@
                 }
             });
 
-            // Modal handling
+            // Edit Modal handling
             const modal = document.getElementById('edit-modal');
-            const closeButton = document.querySelector('.close-button');
+            const closeButton = document.querySelector('#edit-modal .close-button');
             const editForm = document.getElementById('edit-form');
             const tweetIdInput = document.getElementById('edit-tweet-id');
             const tweetTextInput = document.getElementById('edit-tweet-text');
@@ -302,7 +382,105 @@
                 if (event.target == modal) {
                     modal.style.display = 'none';
                 }
+                if (event.target == scheduleModal) {
+                    scheduleModal.style.display = 'none';
+                }
             }
+
+            // Schedule Modal handling
+            const openScheduleBtn = document.getElementById('open-schedule');
+            const scheduleModal = document.getElementById('schedule-modal');
+            const scheduleClose = document.querySelector('#schedule-modal .schedule-close');
+            const scheduleDatetime = document.getElementById('schedule-datetime');
+            const scheduleDatetimeUtc = document.getElementById('schedule-datetime-utc');
+            const scheduleForm = document.getElementById('schedule-form');
+
+            function setDefaultScheduleTime() {
+                const now = new Date();
+                // default to now + 10 minutes
+                now.setMinutes(now.getMinutes() + 10);
+                const pad = n => String(n).padStart(2, '0');
+                const local = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                scheduleDatetime.value = local;
+                scheduleDatetime.min = local; // prevent past times
+            }
+
+            if (openScheduleBtn) {
+                openScheduleBtn.addEventListener('click', function() {
+                    setDefaultScheduleTime();
+                    scheduleModal.style.display = 'block';
+                });
+            }
+            if (scheduleClose) {
+                scheduleClose.addEventListener('click', function() {
+                    scheduleModal.style.display = 'none';
+                });
+            }
+
+            // Convert browser local datetime to UTC ISO before submit
+            if (scheduleForm) {
+                scheduleForm.addEventListener('submit', function(e) {
+                    if (scheduleDatetime && scheduleDatetime.value) {
+                        const local = new Date(scheduleDatetime.value);
+                        const utcIso = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString();
+                        scheduleDatetimeUtc.value = utcIso;
+                    }
+                });
+            }
+
+            // Edit Scheduled handling
+            const editScheduledModal = document.getElementById('edit-scheduled-modal');
+            const editScheduledClose = document.querySelector('#edit-scheduled-modal .edit-scheduled-close');
+            const editScheduledForm = document.getElementById('edit-scheduled-form');
+            const editScheduledSid = document.getElementById('edit-scheduled-sid');
+            const editScheduledText = document.getElementById('edit-scheduled-text');
+            const editScheduledDatetime = document.getElementById('edit-scheduled-datetime');
+            const editScheduledDatetimeUtc = document.getElementById('edit-scheduled-datetime-utc');
+
+            function isoToLocalDatetimeValue(iso) {
+                try {
+                    const d = new Date(iso);
+                    const pad = n => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                } catch { return ''; }
+            }
+
+            document.querySelectorAll('.btn-edit-scheduled').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const sid = this.getAttribute('data-sid');
+                    const text = this.getAttribute('data-text');
+                    const iso = this.getAttribute('data-iso');
+                    editScheduledSid.value = sid;
+                    editScheduledText.value = text;
+                    editScheduledDatetime.value = isoToLocalDatetimeValue(iso);
+                    // set form action dynamically
+                    editScheduledForm.setAttribute('action', `/scheduled/update/${sid}`);
+                    editScheduledModal.style.display = 'block';
+                });
+            });
+            if (editScheduledClose) {
+                editScheduledClose.addEventListener('click', function() {
+                    editScheduledModal.style.display = 'none';
+                });
+            }
+            if (editScheduledForm) {
+                editScheduledForm.addEventListener('submit', function() {
+                    const val = editScheduledDatetime.value;
+                    if (val) {
+                        const local = new Date(val);
+                        const utcIso = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString();
+                        editScheduledDatetimeUtc.value = utcIso;
+                    }
+                });
+            }
+
+            // Render timestamps in browser local from data-iso
+            document.querySelectorAll('.ts[data-iso]').forEach(el => {
+                try {
+                    const d = new Date(el.getAttribute('data-iso'));
+                    el.textContent = d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: '2-digit' });
+                } catch {}
+            });
         });
     </script>
 </body>
