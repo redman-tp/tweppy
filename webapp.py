@@ -7,18 +7,43 @@ import os
 import re
 import requests
 import base64
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, make_response
 from dotenv import load_dotenv
 from rest import get_valid_token, save_tokens
 from datetime import datetime, timezone, timedelta
 import threading
 import time
 import random
+from functools import wraps
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# Minimal shared-secret protection
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+
+def require_admin(fn):
+    """Minimal shared-secret check.
+    Provide token via header X-Admin-Token, query ?admin_token=, or cookie admin_token.
+    If ADMIN_TOKEN is not set, this check is effectively disabled.
+    """
+    @wraps(fn)
+    def _wrapped(*args, **kwargs):
+        if not ADMIN_TOKEN:
+            # No token configured: Do not block to avoid locking out in dev.
+            return fn(*args, **kwargs)
+        token = (
+            request.headers.get("X-Admin-Token")
+            or request.args.get("admin_token")
+            or request.cookies.get("admin_token")
+        )
+        if token == ADMIN_TOKEN:
+            return fn(*args, **kwargs)
+        # Unauthorized
+        return jsonify({"error": "forbidden"}), 403
+    return _wrapped
 
 # Twitter credentials
 CLIENT_ID = os.getenv("CLIENT_ID")
@@ -140,7 +165,7 @@ def mark_tweet_posted(tweet_id, tweet_text):
 def get_queue_stats():
     """Get queue statistics"""
     if USE_MONGODB and queue_collection is not None and stats_collection is not None:
-        unposted = queue_collection.count_documents({})
+        unposted = queue_collection.count_documents({"posted": False})
         
         # Get posted count from stats collection
         posted_doc = stats_collection.find_one({"_id": "posted_count"})
@@ -233,13 +258,21 @@ def index():
         except Exception:
             item['scheduled_wat_str'] = ''
 
-    return render_template('index.html', 
+    resp = make_response(render_template('index.html', 
                          stats=stats, 
                          tweets=tweets,
                          history=history,
                          scheduled=scheduled,
                          scheduled_count=len(scheduled),
-                         use_mongodb=USE_MONGODB)
+                         use_mongodb=USE_MONGODB))
+    # If admin_token is provided in query and matches, persist in cookie for convenience
+    try:
+        token = request.args.get('admin_token')
+        if ADMIN_TOKEN and token and token == ADMIN_TOKEN:
+            resp.set_cookie('admin_token', token, httponly=True, samesite='Lax', max_age=60*60*24*7)
+    except Exception:
+        pass
+    return resp
 
 @app.route('/keepalive')
 def keepalive():
@@ -247,6 +280,7 @@ def keepalive():
     return jsonify({"status": "alive", "timestamp": datetime.now(timezone.utc).isoformat()})
 
 @app.route('/add_tweets', methods=['POST'])
+@require_admin
 def add_tweets():
     # TODO: Add authentication check when OAuth is implemented
     # if not session.get('oauth_token'):
@@ -286,6 +320,7 @@ def add_tweets():
 
     return redirect(url_for('index'))
 @app.route('/scheduled/delete/<sid>', methods=['POST'])
+@require_admin
 def delete_scheduled(sid):
     """Cancel a scheduled tweet (delete it)."""
     if USE_MONGODB and 'scheduled_collection' in globals() and scheduled_collection is not None:
@@ -309,6 +344,7 @@ def delete_scheduled(sid):
     return redirect(url_for('index'))
 
 @app.route('/scheduled/update/<sid>', methods=['POST'])
+@require_admin
 def update_scheduled(sid):
     """Edit the text and/or scheduled time of a scheduled tweet."""
     new_text = request.form.get('scheduled_text', '').strip()
@@ -392,6 +428,7 @@ def update_scheduled(sid):
     return redirect(url_for('index'))
 
 @app.route('/schedule', methods=['POST'])
+@require_admin
 def schedule():
     """Schedule a single tweet at a specified datetime (UTC)."""
     scheduled_text = request.form.get('scheduled_text', '').strip()
@@ -463,6 +500,7 @@ def schedule():
     return redirect(url_for('index'))
 
 @app.route('/post_next', methods=['POST'])
+@require_admin
 def post_next():
     """Manually post the next tweet in queue"""
     next_tweet = get_next_tweet()
@@ -482,6 +520,7 @@ def post_next():
     return redirect(url_for('index'))
 
 @app.route('/clear_queue', methods=['POST'])
+@require_admin
 def clear_queue():
     """Clear all tweets from queue"""
     if USE_MONGODB and queue_collection is not None:
@@ -500,6 +539,7 @@ def api_stats():
     return jsonify(get_queue_stats())
 
 @app.route('/delete_tweet/<tweet_id>', methods=['POST'])
+@require_admin
 def delete_tweet(tweet_id):
     """Delete a single tweet from the queue."""
     if USE_MONGODB and queue_collection is not None:
@@ -520,6 +560,7 @@ def delete_tweet(tweet_id):
     return redirect(url_for('index'))
 
 @app.route('/update_tweet/<tweet_id>', methods=['POST'])
+@require_admin
 def update_tweet(tweet_id):
     """Update the text of a single tweet in the queue."""
     new_text = request.form.get('new_text', '').strip()
@@ -548,6 +589,7 @@ def update_tweet(tweet_id):
     return redirect(url_for('index'))
 
 @app.route('/post_tweet/<tweet_id>', methods=['POST'])
+@require_admin
 def post_specific_tweet(tweet_id):
     # TODO: Add authentication check when OAuth is implemented
     # if not session.get('oauth_token'):
@@ -583,6 +625,7 @@ def post_specific_tweet(tweet_id):
     return redirect(url_for('index'))
 
 @app.route('/clear_history', methods=['POST'])
+@require_admin
 def clear_history():
     """Clear all tweets from the post history."""
     if USE_MONGODB and history_collection is not None:
@@ -602,31 +645,32 @@ posting_active = False
 def auto_post_worker():
     """Background worker to automatically post tweets from queue"""
     global posting_active
-    
+    print("[auto-post] Worker started. Will post every 2 hours when items exist.")
     while posting_active:
         try:
             next_tweet = get_next_tweet()
-            
             if next_tweet:
-                print(f"Auto-posting: {next_tweet['text']}")
+                print(f"[auto-post] Posting next tweet: {next_tweet['text']}")
                 success, message = post_tweet(next_tweet['text'])
-                
                 if success:
                     mark_tweet_posted(next_tweet['_id'], next_tweet['text'])
-                    print(f"✅ Posted and removed: {next_tweet['text']}")
+                    print(f"[auto-post] ✅ Posted and removed: {next_tweet['text']}")
+                    # Wait 2 hours after a successful post
+                    time.sleep(60 * 60 * 2)
                 else:
-                    print(f"❌ Failed to post: {message}")
+                    print(f"[auto-post] ❌ Failed to post: {message}")
+                    # Back off briefly on failure
+                    time.sleep(60)
             else:
-                print("No tweets in queue, waiting...")
-            
-            # Wait 2 hours before next post
-            time.sleep(60 * 60 * 2)
-            
+                # Nothing to do, poll again soon
+                print("[auto-post] No tweets in queue, checking again in 30s...")
+                time.sleep(30)
         except Exception as e:
-            print(f"Error in auto-post worker: {e}")
+            print(f"[auto-post] Error in auto-post worker: {e}")
             time.sleep(60)  # Wait 1 minute before retrying
 
 @app.route('/start_auto_posting', methods=['POST'])
+@require_admin
 def start_auto_posting():
     """Start automatic posting"""
     global posting_active
@@ -642,6 +686,7 @@ def start_auto_posting():
     return redirect(url_for('index'))
 
 @app.route('/stop_auto_posting', methods=['POST'])
+@require_admin
 def stop_auto_posting():
     """Stop automatic posting"""
     global posting_active
@@ -696,6 +741,7 @@ def start_scheduler_if_needed():
         scheduler_thread.start()
 
 @app.route('/clear_stats', methods=['POST'])
+@require_admin
 def clear_stats():
     """Clear/Reset posting statistics counters."""
     if USE_MONGODB and stats_collection is not None:
