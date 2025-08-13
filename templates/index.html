@@ -40,6 +40,12 @@
                         <span>Settings</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-tab="communities-content">
+                        <i class="fa-solid fa-users"></i>
+                        <span>Communities</span>
+                    </a>
+                </li>
             </ul>
             <div class="footer-status">
                 {% if use_mongodb %}
@@ -124,7 +130,7 @@
                             <div id="queue-tab" class="card-tab-content active">
                                 <div class="card-header">
                                     <h3>Tweet Queue</h3>
-                                    {% if tweets %}
+                                    {% if queue %}
                                     <form action="{{ url_for('clear_queue') }}" method="POST" onsubmit="return confirm('Are you sure you want to clear the entire queue?');">
                                         <button type="submit" class="btn btn-danger btn-small">Clear All</button>
                                     </form>
@@ -132,7 +138,7 @@
                                 </div>
                                 <div class="card-content">
                                     <div class="tweet-queue-container">
-                                        {% for tweet in tweets %}
+                                        {% for tweet in queue %}
                                         <div class="tweet-item">
                                             <p>"{{ tweet.text }}"</p>
                                             <div class="fab-container">
@@ -235,6 +241,120 @@
                 <div class="placeholder-content">
                     <i class="fa-solid fa-gear"></i>
                     <p>Application settings and configurations will be available here.</p>
+                </div>
+            </div>
+
+            <!-- Communities Tab -->
+            <div id="communities-content" class="tab-content" style="display: none;">
+                <header><h1>Communities</h1></header>
+                <div id="communities-layout" class="dashboard-left-right-container">
+                    <div class="dashboard-left">
+                        <div class="card community-management-card" style="margin-bottom: 20px;">
+                            <h2><i class="fa-solid fa-users-gear"></i> Manage Community</h2>
+                            <div class="active-community-display">
+                                <span>Active Community:</span>
+                                {% if active_community %}
+                                    <strong id="active-community-name">{{ active_community.name }} ({{ active_community._id }})</strong>
+                                    <span id="active-community-status" class="dot online"></span>
+                                {% else %}
+                                    <strong id="active-community-name">None</strong>
+                                    <span id="active-community-status" class="dot offline"></span>
+                                {% endif %}
+                            </div>
+                            <form id="community-form" action="/set_active_community" method="post">
+                                <label for="community-id-input">Set/Update Community ID</label>
+                                <input id="community-id-input" name="community_id" placeholder="Enter Community ID to add or activate" value="{{ active_community._id if active_community else '' }}" />
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Set Active</button>
+                                </div>
+                            </form>
+
+                            <div class="saved-communities-list">
+                                <h3>Saved Communities</h3>
+                                {% if communities %}
+                                    <ul>
+                                    {% for community in communities %}
+                                        <li class="community-item {% if active_community and active_community._id == community._id %}active{% endif %}">
+                                            <span>{{ community.name }}</span>
+                                            <form action="/set_active_community" method="post" style="display: inline;">
+                                                <input type="hidden" name="community_id" value="{{ community._id }}">
+                                                <button type="submit" class="btn btn-secondary btn-sm">Activate</button>
+                                            </form>
+                                        </li>
+                                    {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    <p class="empty-message">No communities saved yet.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if active_community %}
+                        <div class="card tweet-form-card">
+                            <h2><i class="fa-solid fa-pen-to-square"></i> Add to Community Queue</h2>
+                            <form action="/add_community_tweets" method="post">
+                                <textarea name="community_tweets_input" placeholder='"A new community tweet..." "And another..."' rows="4"></textarea>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">Add to Queue</button>
+                                </div>
+                            </form>
+                        </div>
+                        {% endif %}
+
+                        <div class="card actions-card">
+                            <h2><i class="fa-solid fa-bolt"></i> Community Actions</h2>
+                            <div class="form-actions">
+                                <form action="/start_community_auto_posting" method="POST" style="display:inline-block;">
+                                    <button type="submit" class="btn btn-success" {% if not active_community or community_posting_active %}disabled{% endif %}>Start Auto Post</button>
+                                </form>
+                                <form action="/stop_community_auto_posting" method="POST" style="display:inline-block;">
+                                    <button type="submit" class="btn btn-warning" {% if not community_posting_active %}disabled{% endif %}>Pause Auto Post</button>
+                                </form>
+                            </div>
+                            <div class="status-indicator" style="margin-top: 15px;">
+                                Community Posting Status:
+                                {% if community_posting_active %}
+                                    <span class="dot online"></span> Active
+                                {% else %}
+                                    <span class="dot offline"></span> Inactive
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dashboard-right">
+                        <div class="card tabbed-card">
+                            <div class="card-tabs">
+                                <button class="card-tab-link active" data-tab="community-queue-tab"><i class="fa-solid fa-list-check"></i> Queue</button>
+                                <button class="card-tab-link" data-tab="community-history-tab"><i class="fa-solid fa-clock-rotate-left"></i> History</button>
+                            </div>
+
+                            <div id="community-queue-tab" class="card-tab-content active">
+                                <div class="card-header">
+                                    <h3>Community Tweet Queue ({{ community_queue|length }})</h3>
+                                </div>
+                                <div class="card-content tweet-queue-container">
+                                    {% if community_queue %}
+                                        {% for tweet in community_queue %}
+                                        <div class="tweet-item">
+                                            <p>"{{ tweet.text }}"</p>
+                                        </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <p class="empty-message">No tweets in the community queue.</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div id="community-history-tab" class="card-tab-content">
+                                <div class="card-header">
+                                    <h3>Community Post History</h3>
+                                </div>
+                                <div class="card-content">
+                                    <p class="empty-message">No posts in community history.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -480,6 +600,31 @@
                     const d = new Date(el.getAttribute('data-iso'));
                     el.textContent = d.toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: '2-digit' });
                 } catch {}
+            });
+
+            // FAB menu handling
+            document.querySelectorAll('.fab-main').forEach(fab => {
+                fab.addEventListener('click', function(event) {
+                    event.stopPropagation(); // Prevent window click from closing it immediately
+                    const container = this.closest('.fab-container');
+
+                    // Deactivate other active FABs
+                    document.querySelectorAll('.fab-container.active').forEach(openFab => {
+                        if (openFab !== container) {
+                            openFab.classList.remove('active');
+                        }
+                    });
+
+                    // Toggle the current one
+                    container.classList.toggle('active');
+                });
+            });
+
+            // Close FABs when clicking anywhere else on the page
+            window.addEventListener('click', function() {
+                document.querySelectorAll('.fab-container.active').forEach(fab => {
+                    fab.classList.remove('active');
+                });
             });
         });
     </script>

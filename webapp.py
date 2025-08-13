@@ -15,6 +15,8 @@ import threading
 import time
 import random
 from functools import wraps
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 load_dotenv()
 
@@ -32,7 +34,6 @@ def require_admin(fn):
     @wraps(fn)
     def _wrapped(*args, **kwargs):
         if not ADMIN_TOKEN:
-            # No token configured: Do not block to avoid locking out in dev.
             return fn(*args, **kwargs)
         token = (
             request.headers.get("X-Admin-Token")
@@ -41,7 +42,6 @@ def require_admin(fn):
         )
         if token == ADMIN_TOKEN:
             return fn(*args, **kwargs)
-        # Unauthorized
         return jsonify({"error": "forbidden"}), 403
     return _wrapped
 
@@ -55,37 +55,47 @@ AUTH_URL = "https://twitter.com/i/oauth2/authorize"
 TOKEN_URL = "https://api.twitter.com/2/oauth2/token"
 
 # Tweet queue management
-from pymongo import MongoClient
-
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Global variables for fallback storage
+posting_active = False
+auto_post_thread = None
+community_posting_active = False
+community_auto_post_thread = None
+
+# In-memory data stores (fallback if MongoDB is not used)
 IN_MEMORY_QUEUE = []
 IN_MEMORY_HISTORY = []
-IN_MEMORY_STATS = {"posted_count": 0}
 IN_MEMORY_SCHEDULED = []
+IN_MEMORY_STATS = {"posted_count": 0}
+IN_MEMORY_COMMUNITIES = []
 USE_MONGODB = False
+
+# Database and collection variables
+client = None
+db = None
+queue_collection = None
+history_collection = None
+stats_collection = None
+scheduled_collection = None
+communities_collection = None # For communities
 
 # Try MongoDB connection with SSL error handling
 try:
     print("🔄 Attempting MongoDB connection...")
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    # Test the connection
-    client.admin.command('ping')
+    client.admin.command('ping') # Test the connection
     db = client["twitter"]
     queue_collection = db["tweet_queue"]
     history_collection = db["post_history"]
     stats_collection = db["bot_stats"]
     scheduled_collection = db["scheduled_posts"]
+    communities_collection = db["communities"]
+    community_queue_collection = db["community_tweet_queue"] # For community-specific tweets
     USE_MONGODB = True
     print("✅ MongoDB connection successful!")
 except Exception as e:
     print(f"❌ MongoDB connection failed: {str(e)[:100]}...")
     print("⚠️  Using in-memory storage - data will not persist after restart")
-    client = None
-    queue_collection = None
-    stats_collection = None
-    scheduled_collection = None
 
 def parse_tweets_from_input(input_text):
     """Parse tweets from input text, splitting by quotes"""
@@ -123,6 +133,27 @@ def add_tweets_to_queue(tweets):
                 "posted": False
             })
         return len(tweets)
+
+def add_tweets_to_community_queue(tweets, community_id):
+    """Add tweets to a specific community's queue."""
+    if not tweets:
+        return 0
+    
+    if USE_MONGODB and community_queue_collection is not None:
+        tweet_docs = []
+        for tweet in tweets:
+            tweet_docs.append({
+                "text": tweet,
+                "community_id": community_id,
+                "created_at": datetime.now(timezone.utc),
+                "posted": False
+            })
+        
+        result = community_queue_collection.insert_many(tweet_docs)
+        return len(result.inserted_ids)
+    else:
+        # In-memory not supported for this feature yet
+        return 0
 
 def get_next_tweet():
     """Get the next unposted tweet from queue"""
@@ -226,52 +257,64 @@ def post_tweet(caption):
 
 # Web routes
 @app.route('/')
+@require_admin
 def index():
-    stats = get_queue_stats()
-    
-    # Get all unposted tweets for display
-    if USE_MONGODB and queue_collection is not None and history_collection is not None:
-        tweets = list(queue_collection.find().sort("created_at", 1))
+    # Fetch all necessary data
+    if USE_MONGODB and queue_collection is not None:
+        tweets = list(queue_collection.find({"posted": False}).sort("created_at", 1))
         history = list(history_collection.find().sort("posted_at", -1).limit(50))
-        # Scheduled (unposted only)
-        scheduled = list(scheduled_collection.find({"posted": False}).sort("scheduled_at", 1)) if 'scheduled_collection' in globals() and scheduled_collection is not None else []
+        stats = get_queue_stats()
+        scheduled = list(scheduled_collection.find({"posted": False}).sort("scheduled_at", 1))
+        communities = list(communities_collection.find())
     else:
+        # In-memory fallback
         tweets = [t for t in IN_MEMORY_QUEUE if not t.get("posted", False)]
-        history = sorted(IN_MEMORY_HISTORY, key=lambda x: x['posted_at'], reverse=True)[:50]
+        history = sorted(IN_MEMORY_HISTORY, key=lambda x: x["posted_at"], reverse=True)[:50]
+        stats = get_queue_stats()
         scheduled = [s for s in IN_MEMORY_SCHEDULED if not s.get('posted')]
+        communities = IN_MEMORY_COMMUNITIES
 
-    # Compute WAT display strings
-    WAT = timezone(timedelta(hours=1))
-    for post in history:
-        try:
-            post_dt = post.get('posted_at')
-            if post_dt and post_dt.tzinfo is not None:
-                post['posted_wat_str'] = post_dt.astimezone(WAT).strftime('%b %d, %H:%M WAT')
-        except Exception:
-            post['posted_wat_str'] = ''
+    # Handle active community and its specific queue
+    active_community_id = session.get('active_community_id')
+    active_community = None
+    community_tweets = []
+    if active_community_id:
+        if USE_MONGODB and communities_collection is not None:
+            active_community = communities_collection.find_one({'_id': active_community_id})
+            if community_queue_collection is not None:
+                community_tweets = list(community_queue_collection.find({'community_id': active_community_id, 'posted': False}).sort("created_at", 1))
+        else:
+            active_community = next((c for c in communities if c['_id'] == active_community_id), None)
+            # In-memory community tweets not supported
 
+    # Format scheduled datetimes for display
     for item in scheduled:
-        try:
-            sched_dt = item.get('scheduled_at')
-            if sched_dt and sched_dt.tzinfo is not None:
-                item['scheduled_wat_str'] = sched_dt.astimezone(WAT).strftime('%b %d, %H:%M WAT')
-        except Exception:
-            item['scheduled_wat_str'] = ''
+        if 'scheduled_at' in item and isinstance(item['scheduled_at'], datetime):
+            item['scheduled_at_str'] = item['scheduled_at'].replace(tzinfo=timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M')
+        else:
+            item['scheduled_at_str'] = ''
 
     resp = make_response(render_template('index.html', 
-                         stats=stats, 
-                         tweets=tweets,
+                         queue=tweets,
                          history=history,
-                         scheduled=scheduled,
+                         stats=stats,
                          scheduled_count=len(scheduled),
-                         use_mongodb=USE_MONGODB))
-    # If admin_token is provided in query and matches, persist in cookie for convenience
+                         use_mongodb=USE_MONGODB,
+                         posting_active=posting_active,
+                         community_posting_active=community_posting_active,
+                         communities=communities,
+                         active_community=active_community,
+                         community_queue=community_tweets))
+    
+    # Persist admin token in cookie if provided
     try:
         token = request.args.get('admin_token')
-        if ADMIN_TOKEN and token and token == ADMIN_TOKEN:
-            resp.set_cookie('admin_token', token, httponly=True, samesite='Lax', max_age=60*60*24*7)
-    except Exception:
-        pass
+        if token and token == ADMIN_TOKEN:
+            expire_date = datetime.now() + timedelta(days=30)
+            resp.set_cookie('admin_token', token, expires=expire_date, httponly=True, samesite='Lax')
+    except Exception as e:
+        print(f"Error setting admin cookie: {e}")
+
     return resp
 
 @app.route('/keepalive')
@@ -319,6 +362,32 @@ def add_tweets():
         pass
 
     return redirect(url_for('index'))
+
+@app.route('/add_community_tweets', methods=['POST'])
+@require_admin
+def add_community_tweets():
+    """Add tweets to the active community's queue."""
+    tweets_input = request.form.get('community_tweets_input', '')
+    tweet_texts = parse_tweets_from_input(tweets_input)
+
+    if not tweet_texts:
+        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
+        return redirect(url_for('index'))
+
+    active_community_id = session.get('active_community_id')
+    if not active_community_id:
+        flash('No active community set. Please set one before adding tweets.', 'error')
+        return redirect(url_for('index'))
+
+    added_count = add_tweets_to_community_queue(tweet_texts, active_community_id)
+    
+    if added_count > 0:
+        flash(f'{added_count} tweet(s) added to the community queue!', 'success')
+    else:
+        flash('Could not add tweets to the community queue.', 'error')
+
+    return redirect(url_for('index'))
+
 @app.route('/scheduled/delete/<sid>', methods=['POST'])
 @require_admin
 def delete_scheduled(sid):
@@ -392,39 +461,97 @@ def update_scheduled(sid):
         else:
             flash('Scheduled tweet not found.', 'error')
     return redirect(url_for('index'))
-    action = request.form.get('action')
-    tweets_input = request.form.get('tweets_input', '')
-    tweet_texts = parse_tweets_from_input(tweets_input)
 
-    if not tweet_texts:
-        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
-        return redirect(url_for('index'))
+def get_next_community_tweet(community_id):
+    """Get the next unposted tweet for a specific community."""
+    if USE_MONGODB and community_queue_collection is not None:
+        return community_queue_collection.find_one(
+            {"community_id": community_id, "posted": False},
+            sort=[("created_at", 1)]
+        )
+    # In-memory not supported for this feature yet
+    return None
 
-    if action == 'post':
-        # Post the first tweet immediately
-        tweet_to_post = tweet_texts.pop(0)
-        success, message = post_tweet(tweet_to_post)
-        if success:
-            mark_tweet_posted(None, tweet_to_post)  # None for ID as it wasn't in DB
-            flash('Tweet posted successfully!', 'success')
+def mark_community_tweet_posted(tweet_id, tweet_text):
+    """Mark a community tweet as posted."""
+    if USE_MONGODB and community_queue_collection is not None and history_collection is not None:
+        history_collection.insert_one({
+            "text": tweet_text,
+            "posted_at": datetime.now(timezone.utc),
+            "type": "community"
+        })
+        community_queue_collection.delete_one({"_id": tweet_id})
+    # In-memory not supported for this feature yet
+    pass
+
+def community_auto_post_worker(active_community):
+    """Background worker for posting tweets to the active community."""
+    global community_posting_active
+    community_id = active_community.get('_id')
+    print(f"[community-auto-post] Worker started for community: {active_community.get('name', 'N/A')}.")
+    while community_posting_active:
+        try:
+            next_tweet = get_next_community_tweet(community_id)
+            if next_tweet:
+                print(f"[community-auto-post] Posting: {next_tweet['text']}")
+                # NOTE: The standard post_tweet does not support posting to communities yet.
+                # This will post to the main timeline. This is a known limitation.
+                success, message = post_tweet(next_tweet['text'])
+                if success:
+                    mark_community_tweet_posted(next_tweet['_id'], next_tweet['text'])
+                    print(f"[community-auto-post] ✅ Posted: {next_tweet['text']}")
+                    time.sleep(60 * 60 * 2) # Wait 2 hours
+                else:
+                    print(f"[community-auto-post] ❌ Failed to post: {message}")
+                    time.sleep(60) # Wait 1 minute before retry
+            else:
+                print(f"[community-auto-post] No tweets in queue for community {community_id}. Checking in 30s...")
+                time.sleep(30)
+        except Exception as e:
+            print(f"[community-auto-post] Error in worker: {e}")
+            time.sleep(60)
+
+    print(f"[community-auto-post] Worker stopped for community {community_id}.")
+
+@app.route('/start_community_auto_post', methods=['POST'])
+@require_admin
+def start_community_auto_post():
+    global community_posting_active, community_auto_post_thread
+    if not community_posting_active:
+        active_community_id = session.get('active_community_id')
+        if not active_community_id:
+            flash('Set an active community before starting auto-posting.', 'error')
+            return redirect(url_for('index'))
+
+        if USE_MONGODB:
+            active_community = communities_collection.find_one({'_id': active_community_id})
         else:
-            flash(f'Error posting tweet: {message}', 'error')
-            # Add it back to the list to be queued if posting fails
-            tweet_texts.insert(0, tweet_to_post)
+            active_community = next((c for c in IN_MEMORY_COMMUNITIES if c['_id'] == active_community_id), None)
 
-    # Add remaining tweets (or all if action was 'queue') to the queue
-    if action == 'queue':
-        if tweet_texts:
-            added_count = add_tweets_to_queue(tweet_texts)
-            flash(f'{added_count} tweet(s) added to the queue!', 'success')
-    elif tweet_texts:  # This handles the case where action is 'post' and there are remaining tweets
-        added_count = add_tweets_to_queue(tweet_texts)
-        flash(f'First tweet posted, {added_count} remaining tweet(s) added to queue.', 'success')
+        if not active_community:
+            flash('Active community not found.', 'error')
+            return redirect(url_for('index'))
+
+        community_posting_active = True
+        community_auto_post_thread = threading.Thread(target=community_auto_post_worker, args=(active_community,))
+        community_auto_post_thread.daemon = True
+        community_auto_post_thread.start()
+        flash('Community auto-posting started!', 'success')
     else:
-        # This case is for when action is 'post' and there was only one tweet.
-        # The success message is already flashed inside the 'post' block.
-        pass
+        flash('Community auto-posting is already running.', 'info')
+    return redirect(url_for('index'))
 
+@app.route('/pause_community_auto_post', methods=['POST'])
+@require_admin
+def pause_community_auto_post():
+    global community_posting_active
+    if community_posting_active:
+        community_posting_active = False
+        if community_auto_post_thread:
+            community_auto_post_thread.join(timeout=1) # Give thread a moment to exit cleanly
+        flash('Community auto-posting paused.', 'success')
+    else:
+        flash('Community auto-posting is not running.', 'info')
     return redirect(url_for('index'))
 
 @app.route('/schedule', methods=['POST'])
@@ -462,41 +589,6 @@ def schedule():
 
     # Ensure scheduler is running
     start_scheduler_if_needed()
-    return redirect(url_for('index'))
-
-    action = request.form.get('action')
-    tweets_input = request.form.get('tweets_input', '')
-    tweet_texts = parse_tweets_from_input(tweets_input)
-
-    if not tweet_texts:
-        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
-        return redirect(url_for('index'))
-
-    if action == 'post':
-        # Post the first tweet immediately
-        tweet_to_post = tweet_texts.pop(0)
-        success, message = post_tweet(tweet_to_post)
-        if success:
-            mark_tweet_posted(None, tweet_to_post)  # None for ID as it wasn't in DB
-            flash('Tweet posted successfully!', 'success')
-        else:
-            flash(f'Error posting tweet: {message}', 'error')
-            # Add it back to the list to be queued if posting fails
-            tweet_texts.insert(0, tweet_to_post)
-
-    # Add remaining tweets (or all if action was 'queue') to the queue
-    if action == 'queue':
-        if tweet_texts:
-            added_count = add_tweets_to_queue(tweet_texts)
-            flash(f'{added_count} tweet(s) added to the queue!', 'success')
-    elif tweet_texts: # This handles the case where action is 'post' and there are remaining tweets
-        added_count = add_tweets_to_queue(tweet_texts)
-        flash(f'First tweet posted, {added_count} remaining tweet(s) added to queue.', 'success')
-    else:
-        # This case is for when action is 'post' and there was only one tweet.
-        # The success message is already flashed inside the 'post' block.
-        pass
-
     return redirect(url_for('index'))
 
 @app.route('/post_next', methods=['POST'])
@@ -638,12 +730,8 @@ def clear_history():
         flash(f'Cleared {cleared_count} tweets from history.', 'info')
     return redirect(url_for('index'))
 
-
 # Auto-posting background thread
-posting_active = False
-
 def auto_post_worker():
-    """Background worker to automatically post tweets from queue"""
     global posting_active
     print("[auto-post] Worker started. Will post every 2 hours when items exist.")
     while posting_active:
@@ -655,19 +743,16 @@ def auto_post_worker():
                 if success:
                     mark_tweet_posted(next_tweet['_id'], next_tweet['text'])
                     print(f"[auto-post] ✅ Posted and removed: {next_tweet['text']}")
-                    # Wait 2 hours after a successful post
-                    time.sleep(60 * 60 * 2)
+                    time.sleep(60 * 60 * 2) # Wait 2 hours
                 else:
                     print(f"[auto-post] ❌ Failed to post: {message}")
-                    # Back off briefly on failure
-                    time.sleep(60)
+                    time.sleep(60) # Wait 1 minute before retry
             else:
-                # Nothing to do, poll again soon
                 print("[auto-post] No tweets in queue, checking again in 30s...")
                 time.sleep(30)
         except Exception as e:
-            print(f"[auto-post] Error in auto-post worker: {e}")
-            time.sleep(60)  # Wait 1 minute before retrying
+            print(f"[auto-post] Error in worker: {e}")
+            time.sleep(60) # Wait 1 minute before retry
 
 @app.route('/start_auto_posting', methods=['POST'])
 @require_admin
@@ -739,6 +824,39 @@ def start_scheduler_if_needed():
         scheduler_active = True
         scheduler_thread = threading.Thread(target=scheduler_worker, daemon=True)
         scheduler_thread.start()
+
+@app.route('/set_active_community', methods=['POST'])
+@require_admin
+def set_active_community():
+    """Add or update a community and set it as active in the session."""
+    community_id = request.form.get('community_id', '').strip()
+    if not community_id or not community_id.isdigit():
+        flash('Please provide a valid numerical Community ID.', 'error')
+        return redirect(url_for('index'))
+
+    community_name = f"Community {community_id}" # Placeholder name
+
+    if USE_MONGODB and communities_collection is not None:
+        communities_collection.update_one(
+            {'_id': community_id},
+            {'$setOnInsert': {
+                'name': community_name, 
+                'auto_posting_active': False,
+                'created_at': datetime.now(timezone.utc)
+            }},
+            upsert=True
+        )
+    else:
+        if not any(c['_id'] == community_id for c in IN_MEMORY_COMMUNITIES):
+            IN_MEMORY_COMMUNITIES.append({
+                '_id': community_id, 
+                'name': community_name, 
+                'auto_posting_active': False
+            })
+
+    session['active_community_id'] = community_id
+    flash(f'Active community set to {community_name}', 'success')
+    return redirect(url_for('index'))
 
 @app.route('/clear_stats', methods=['POST'])
 @require_admin

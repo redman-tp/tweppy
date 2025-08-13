@@ -11,6 +11,7 @@
     --card-bg: #2c2c2c;
     --success-color: #28a745;
     --error-color: #dc3545;
+    --hover-bg: #3a3a3a;
 }
 
 * {
@@ -226,64 +227,35 @@ header h1 {
 }
 
 .card-tab-link.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+    color: var(--primary-accent);
+    border-bottom-color: var(--primary-accent);
 }
 
 .card-tab-link:hover:not(.active) {
-    color: var(--text-primary);
+    color: var(--text-color);
     background-color: var(--hover-bg);
 }
 
 .card-tab-content {
     display: none;
+    padding: 1.5rem;
 }
 
 .card-tab-content.active {
     display: block;
 }
 
-/* FAB (Floating Action Button) Styles */
-.fab-container {
-    position: relative;
-    display: flex;
-    align-items: center;
+.card.tabbed-card {
+    padding: 0;
 }
 
-.fab-main {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: var(--secondary-bg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: background-color 0.2s;
+.card.tabbed-card .card-header {
+    padding: 0;
 }
 
-.fab-main:hover {
-    background-color: var(--hover-bg);
-}
-
-.fab-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    position: absolute;
-    right: 50px; /* Position to the left of the main FAB button */
-    visibility: hidden;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
-    background-color: var(--card-bg);
-    padding: 0.5rem;
-    border-radius: 50px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-}
-
-.fab-container:hover .fab-actions {
-    visibility: visible;
-    opacity: 1;
+@keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* Dashboard Specific Layout */
@@ -308,41 +280,10 @@ header h1 {
     flex: 1; /* Takes up 1/3 of the space */
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
 }
 
-.tweet-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.tweet-item:last-child {
-    border-bottom: none;
-}
-
-.tweet-item p {
-    margin: 0;
-    flex-grow: 1;
-    padding-right: 1rem;
-}
-
-.tweet-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.tweet-queue-container {
-    max-height: calc(100vh - 300px); /* Adjust height based on viewport, minus padding/headers */
-    overflow-y: auto;
-    padding-right: 0.5rem;
-}
-
-.post-history-card .post-history-container {
-    max-height: calc(50vh - 150px); /* Adjust based on viewport */
+.history-list {
+    max-height: 300px; /* Or any other desired height */
     overflow-y: auto;
 }
 
@@ -581,4 +522,148 @@ header h1 {
 .alert-error {
     background-color: var(--error-color);
     color: white;
+}
+
+/* Community Management Styles */
+.community-management-card {
+    margin-bottom: 20px;
+}
+
+/* Responsive height for main queue card */
+#queue-tab .tweet-queue-container {
+    max-height: 60vh; /* responsive to device height */
+    overflow-y: auto; /* show scrollbar inside the card */
+}
+
+/* Apply same responsive scroll to Scheduled tab */
+#scheduled-tab .tweet-queue-container {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+/* Apply same responsive scroll to History tab */
+#history-tab .post-history-container {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+/* Consistent scrollbar styling for all scrollable tab lists */
+#queue-tab .tweet-queue-container,
+#scheduled-tab .tweet-queue-container,
+#history-tab .post-history-container {
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: var(--primary-accent) transparent; /* Firefox */
+}
+
+#queue-tab .tweet-queue-container::-webkit-scrollbar,
+#scheduled-tab .tweet-queue-container::-webkit-scrollbar,
+#history-tab .post-history-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+#queue-tab .tweet-queue-container::-webkit-scrollbar-track,
+#scheduled-tab .tweet-queue-container::-webkit-scrollbar-track,
+#history-tab .post-history-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#queue-tab .tweet-queue-container::-webkit-scrollbar-thumb,
+#scheduled-tab .tweet-queue-container::-webkit-scrollbar-thumb,
+#history-tab .post-history-container::-webkit-scrollbar-thumb {
+    background-color: var(--primary-accent);
+    border-radius: 8px;
+}
+
+#queue-tab .tweet-queue-container::-webkit-scrollbar-thumb:hover,
+#scheduled-tab .tweet-queue-container::-webkit-scrollbar-thumb:hover,
+#history-tab .post-history-container::-webkit-scrollbar-thumb:hover {
+    background-color: #1a91da; /* slightly darker accent on hover */
+}
+
+.active-community-display {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    color: #eee;
+}
+
+.saved-communities-list {
+    margin-top: 20px;
+}
+
+.saved-communities-list h3 {
+    font-size: 1rem;
+    color: #ccc;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #444;
+    padding-bottom: 5px;
+}
+
+.saved-communities-list ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.saved-communities-list .community-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background-color: #333;
+    margin-bottom: 5px;
+    transition: background-color 0.2s;
+}
+
+.saved-communities-list .community-item:hover {
+    background-color: #444;
+}
+
+.saved-communities-list .community-item.active {
+    background-color: #004d40; /* Dark teal for active item */
+    font-weight: bold;
+}
+
+.saved-communities-list .community-item span {
+    color: #eee;
+}
+
+/* FAB (Floating Action Button) Styles */
+.fab-container {
+    position: relative;
+}
+
+.fab-main {
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.fab-main:hover {
+    background-color: var(--hover-bg);
+}
+
+.fab-actions {
+    display: none; /* This is the key: hidden by default */
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.5rem;
+    gap: 0.5rem;
+    margin-right: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.fab-container.active .fab-actions {
+    display: flex; /* This rule makes it visible only when the container is active */
 }
