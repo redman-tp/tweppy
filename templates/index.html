@@ -112,7 +112,7 @@
                         <div class="card tweet-form-card">
                              <h2><i class="fa-solid fa-pen-to-square"></i> Compose & Queue</h2>
                             <form id="tweet-form" action="/add_tweets" method="post">
-                                <textarea id="tweet-input" name="tweets_input" placeholder='"A new tweet..." "And another one..."'></textarea>
+                                <textarea id="tweet-input" name="tweets_input" placeholder='[A new tweet...] [And another one...]'></textarea>
                                 <div class="form-actions">
                                     <button type="submit" name="action" value="queue" class="btn btn-primary">Add to Queue</button>
                                 </div>
@@ -293,7 +293,7 @@
                         <div class="card tweet-form-card">
                             <h2><i class="fa-solid fa-pen-to-square"></i> Add to Community Queue</h2>
                             <form action="/add_community_tweets" method="post">
-                                <textarea name="community_tweets_input" placeholder='"A new community tweet..." "And another..."' rows="4"></textarea>
+                                <textarea name="community_tweets_input" placeholder='[A new community tweet...] [And another...]' rows="4"></textarea>
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn-primary">Add to Queue</button>
                                 </div>

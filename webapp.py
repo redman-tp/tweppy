@@ -98,10 +98,12 @@ except Exception as e:
     print("⚠️  Using in-memory storage - data will not persist after restart")
 
 def parse_tweets_from_input(input_text):
-    """Parse tweets from input text, splitting by quotes"""
-    # Find all text within quotes (both single and double)
-    tweets = re.findall(r'"([^"]*)"', input_text)
-    tweets.extend(re.findall(r"'([^']*)'", input_text))
+    """Parse tweets from input text using square brackets as delimiters.
+    Example: [First tweet] [Second tweet]
+    This avoids conflicts with quotes inside tweet text.
+    """
+    # Find all text within single-level square brackets
+    tweets = re.findall(r"\[([^\]]+)\]", input_text)
     
     # Clean up tweets - remove empty ones and strip whitespace
     tweets = [tweet.strip() for tweet in tweets if tweet.strip()]
@@ -333,7 +335,7 @@ def add_tweets():
     tweet_texts = parse_tweets_from_input(tweets_input)
 
     if not tweet_texts:
-        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
+        flash('No valid tweets found. Please enclose each tweet in [square brackets].', 'error')
         return redirect(url_for('index'))
 
     if action == 'post':
@@ -371,7 +373,7 @@ def add_community_tweets():
     tweet_texts = parse_tweets_from_input(tweets_input)
 
     if not tweet_texts:
-        flash('No valid tweets found. Please enclose each tweet in double quotes.', 'error')
+        flash('No valid tweets found. Please enclose each tweet in [square brackets].', 'error')
         return redirect(url_for('index'))
 
     active_community_id = session.get('active_community_id')
