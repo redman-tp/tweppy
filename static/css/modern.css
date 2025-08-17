@@ -580,6 +580,41 @@ header h1 {
     background-color: #1a91da; /* slightly darker accent on hover */
 }
 
+/* Community Tabs Scroll */
+#community-queue-tab .tweet-queue-container,
+#community-history-tab .card-content {
+    max-height: 55vh;
+    overflow-y: auto;
+}
+
+/* Community Tabs Scrollbar Styling */
+#community-queue-tab .tweet-queue-container,
+#community-history-tab .card-content {
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: var(--primary-accent) transparent; /* Firefox */
+}
+
+#community-queue-tab .tweet-queue-container::-webkit-scrollbar,
+#community-history-tab .card-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+#community-queue-tab .tweet-queue-container::-webkit-scrollbar-track,
+#community-history-tab .card-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#community-queue-tab .tweet-queue-container::-webkit-scrollbar-thumb,
+#community-history-tab .card-content::-webkit-scrollbar-thumb {
+    background-color: var(--primary-accent);
+    border-radius: 8px;
+}
+
+#community-queue-tab .tweet-queue-container::-webkit-scrollbar-thumb:hover,
+#community-history-tab .card-content::-webkit-scrollbar-thumb:hover {
+    background-color: #1a91da;
+}
+
 .active-community-display {
     display: flex;
     align-items: center;

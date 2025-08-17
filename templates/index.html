@@ -264,6 +264,8 @@
                             <form id="community-form" action="/set_active_community" method="post">
                                 <label for="community-id-input">Set/Update Community ID</label>
                                 <input id="community-id-input" name="community_id" placeholder="Enter Community ID to add or activate" value="{{ active_community._id if active_community else '' }}" />
+                                <label for="community-name-input" style="margin-top:8px;">Community Name (optional)</label>
+                                <input id="community-name-input" name="community_name" placeholder="e.g. Awesome Devs" value="{{ active_community.name if active_community else '' }}" />
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn-primary">Set Active</button>
                                 </div>
@@ -293,7 +295,7 @@
                         <div class="card tweet-form-card">
                             <h2><i class="fa-solid fa-pen-to-square"></i> Add to Community Queue</h2>
                             <form action="/add_community_tweets" method="post">
-                                <textarea name="community_tweets_input" placeholder='[A new community tweet...] [And another...]' rows="4"></textarea>
+                                <textarea id="community-tweet-input" name="community_tweets_input" placeholder='[A new community tweet...] [And another...]' rows="4"></textarea>
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn-primary">Add to Queue</button>
                                 </div>
@@ -324,19 +326,43 @@
                     <div class="dashboard-right">
                         <div class="card tabbed-card">
                             <div class="card-tabs">
-                                <button class="card-tab-link active" data-tab="community-queue-tab"><i class="fa-solid fa-list-check"></i> Queue</button>
-                                <button class="card-tab-link" data-tab="community-history-tab"><i class="fa-solid fa-clock-rotate-left"></i> History</button>
+                                <button class="card-tab-link active" data-tab="community-queue-tab"><i class="fa-solid fa-list-check"></i> Queue ({{ community_queue|length }})</button>
+                                <button class="card-tab-link" data-tab="community-history-tab"><i class="fa-solid fa-clock-rotate-left"></i> History ({{ community_post_history|length }})</button>
                             </div>
 
                             <div id="community-queue-tab" class="card-tab-content active">
                                 <div class="card-header">
                                     <h3>Community Tweet Queue ({{ community_queue|length }})</h3>
+                                    {% if community_queue %}
+                                    <div>
+                                        <form action="/post_next_community" method="POST" style="display:inline-block; margin-right:8px;">
+                                            <button type="submit" class="btn btn-primary btn-small">Post Next</button>
+                                        </form>
+                                        <form action="/clear_community_queue" method="POST" style="display:inline-block;" onsubmit="return confirm('Clear all tweets in the community queue?');">
+                                            <button type="submit" class="btn btn-danger btn-small">Clear All</button>
+                                        </form>
+                                    </div>
+                                    {% endif %}
                                 </div>
                                 <div class="card-content tweet-queue-container">
                                     {% if community_queue %}
                                         {% for tweet in community_queue %}
                                         <div class="tweet-item">
                                             <p>"{{ tweet.text }}"</p>
+                                            <div class="fab-container">
+                                                <div class="fab-main">
+                                                    <i class="fa-solid fa-ellipsis-vertical"></i>
+                                                </div>
+                                                <div class="fab-actions">
+                                                    <form action="/post_community_tweet/{{ tweet._id }}" method="POST" style="display: inline;">
+                                                        <button type="submit" class="btn btn-primary btn-small btn-icon" title="Post Now"><i class="fa-solid fa-paper-plane"></i></button>
+                                                    </form>
+                                                    <button class="btn btn-secondary btn-small btn-icon btn-edit-community" data-tweet-id="{{ tweet._id }}" data-tweet-text="{{ tweet.text }}" title="Edit Tweet"><i class="fa-solid fa-pencil"></i></button>
+                                                    <form action="/delete_community_tweet/{{ tweet._id }}" method="POST" style="display: inline;" onsubmit="return confirm('Delete this community tweet?');">
+                                                        <button type="submit" class="btn btn-danger btn-small btn-icon" title="Delete Tweet"><i class="fa-solid fa-trash"></i></button>
+                                                    </form>
+                                                </div>
+                                            </div>
                                         </div>
                                         {% endfor %}
                                     {% else %}
@@ -416,33 +442,66 @@
             const mainTabLinks = document.querySelectorAll('.nav-link');
             const mainTabContents = document.querySelectorAll('.tab-content');
 
-            mainTabLinks.forEach(link => {
-                link.addEventListener('click', function() {
-                    mainTabLinks.forEach(l => l.classList.remove('active'));
-                    this.classList.add('active');
+            function setActiveTab(tabId) {
+                mainTabLinks.forEach(link => {
+                    if (link.getAttribute('data-tab') === tabId) {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
 
+                mainTabContents.forEach(content => {
+                    content.style.display = content.id === tabId ? 'block' : 'none';
+                });
+
+                localStorage.setItem('activeMainTab', tabId);
+            }
+
+            mainTabLinks.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
                     const tabId = this.getAttribute('data-tab');
-                    mainTabContents.forEach(content => {
-                        content.style.display = content.id === tabId ? 'block' : 'none';
-                    });
+                    setActiveTab(tabId);
                 });
             });
 
+            // On page load, restore the active tab
+            const savedTab = localStorage.getItem('activeMainTab');
+            if (savedTab) {
+                setActiveTab(savedTab);
+            } else {
+                // Default to the first tab if nothing is saved
+                setActiveTab('dashboard-content');
+            }
+
             // In-card tabs for Queue/History
-            const cardTabLinks = document.querySelectorAll('.card-tab-link');
-            const cardTabContents = document.querySelectorAll('.card-tab-content');
+            const tabbedCards = document.querySelectorAll('.tabbed-card');
 
-            cardTabLinks.forEach(link => {
-                link.addEventListener('click', function() {
-                    cardTabLinks.forEach(l => l.classList.remove('active'));
-                    this.classList.add('active');
+            tabbedCards.forEach(card => {
+                const links = card.querySelectorAll('.card-tab-link');
+                const contents = card.querySelectorAll('.card-tab-content');
 
-                    const tabId = this.getAttribute('data-tab');
-                    cardTabContents.forEach(content => {
-                        if (content.id === tabId) {
-                            content.classList.add('active');
-                        } else {
+                links.forEach(link => {
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        
+                        // Deactivate all links within this card
+                        links.forEach(l => l.classList.remove('active'));
+                        // Activate the clicked link
+                        this.classList.add('active');
+
+                        const tabId = this.getAttribute('data-tab');
+
+                        // Hide all content within this card
+                        contents.forEach(content => {
                             content.classList.remove('active');
+                        });
+
+                        // Show the target content
+                        const targetContent = card.querySelector('#' + tabId);
+                        if (targetContent) {
+                            targetContent.classList.add('active');
                         }
                     });
                 });

@@ -57,6 +57,9 @@ TOKEN_URL = "https://api.twitter.com/2/oauth2/token"
 # Tweet queue management
 MONGO_URI = os.getenv("MONGO_URI")
 
+# Safety: prevent accidental posting to profile when using community actions
+COMMUNITY_POST_TO_PROFILE_ALLOWED = os.getenv("ALLOW_COMMUNITY_PROFILE_POST", "false").lower() == "true"
+
 posting_active = False
 auto_post_thread = None
 community_posting_active = False
@@ -238,8 +241,8 @@ def schedule_tweets(tweets, scheduled_at):
             })
         return len(tweets)
 
-def post_tweet(caption):
-    """Post tweet using Twitter API v2"""
+def post_to_profile(caption):
+    """Post to the user's profile timeline."""
     try:
         token = get_valid_token()
         headers = {
@@ -247,15 +250,36 @@ def post_tweet(caption):
             "Content-Type": "application/json"
         }
         payload = {"text": caption}
-        
-        response = requests.post("https://api.twitter.com/2/tweets", headers=headers, json=payload)
-        
+        response = requests.post("https://api.x.com/2/tweets", headers=headers, json=payload)
         if response.status_code == 201:
             return True, "Tweet posted successfully"
         else:
             return False, f"Failed to post tweet: {response.status_code} - {response.text}"
     except Exception as e:
         return False, f"Error posting tweet: {str(e)}"
+
+def post_to_community(caption, community_id):
+    """Post to a specific community. Requires the authenticated user to be a member of that community."""
+    try:
+        if not community_id:
+            return False, "community_id is required for community posting"
+        token = get_valid_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        payload = {"text": caption, "community_id": str(community_id)}
+        response = requests.post("https://api.x.com/2/tweets", headers=headers, json=payload)
+        if response.status_code == 201:
+            return True, "Community post created successfully"
+        else:
+            return False, f"Failed to post to community: {response.status_code} - {response.text}"
+    except Exception as e:
+        return False, f"Error posting to community: {str(e)}"
+
+def post_tweet(caption):
+    """Backward-compatible alias for posting to profile."""
+    return post_to_profile(caption)
 
 # Web routes
 @app.route('/')
@@ -556,6 +580,118 @@ def pause_community_auto_post():
         flash('Community auto-posting is not running.', 'info')
     return redirect(url_for('index'))
 
+# Alias to match frontend form action
+@app.route('/stop_community_auto_posting', methods=['POST'])
+@require_admin
+def stop_community_auto_posting():
+    """Alias for pausing community auto-posting to match frontend route."""
+    return pause_community_auto_post()
+
+@app.route('/post_next_community', methods=['POST'])
+@require_admin
+def post_next_community():
+    """Manually post the next tweet in the active community queue."""
+    active_community_id = session.get('active_community_id')
+    if not active_community_id:
+        flash('No active community set. Please set one before posting.', 'error')
+        return redirect(url_for('index'))
+
+    next_tweet = get_next_community_tweet(active_community_id)
+    if not next_tweet:
+        flash('No tweets in the community queue to post!', 'error')
+        return redirect(url_for('index'))
+
+    success, message = post_to_community(next_tweet['text'], community_id=active_community_id)
+    if success:
+        mark_community_tweet_posted(next_tweet['_id'], next_tweet['text'])
+        flash('Community tweet posted successfully!', 'success')
+    else:
+        flash(f'Failed to post community tweet: {message}', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/post_community_tweet/<tweet_id>', methods=['POST'])
+@require_admin
+def post_specific_community_tweet(tweet_id):
+    """Post a specific tweet in the active community queue by ID."""
+    if not USE_MONGODB or community_queue_collection is None:
+        flash('In-memory community queue operations are not supported.', 'error')
+        return redirect(url_for('index'))
+
+    try:
+        from bson.objectid import ObjectId
+        obj_id = ObjectId(tweet_id)
+    except Exception:
+        flash('Invalid community tweet ID.', 'error')
+        return redirect(url_for('index'))
+
+    tweet_doc = community_queue_collection.find_one({'_id': obj_id})
+    if not tweet_doc:
+        flash('Community tweet not found in queue.', 'error')
+        return redirect(url_for('index'))
+
+    active_community_id = session.get('active_community_id') or tweet_doc.get('community_id')
+    success, message = post_to_community(tweet_doc['text'], community_id=active_community_id)
+    if success:
+        mark_community_tweet_posted(obj_id, tweet_doc['text'])
+        flash('Community tweet posted successfully!', 'success')
+    else:
+        flash(f'Failed to post community tweet: {message}', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/delete_community_tweet/<tweet_id>', methods=['POST'])
+@require_admin
+def delete_community_tweet(tweet_id):
+    """Delete a single tweet from the active community queue."""
+    if USE_MONGODB and community_queue_collection is not None:
+        from bson.objectid import ObjectId
+        result = community_queue_collection.delete_one({'_id': ObjectId(tweet_id)})
+        if result.deleted_count == 0:
+            flash('Community tweet not found or already deleted.', 'error')
+        else:
+            flash('Community tweet successfully deleted.', 'success')
+    else:
+        flash('In-memory community queue operations are not supported.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/update_community_tweet/<tweet_id>', methods=['POST'])
+@require_admin
+def update_community_tweet(tweet_id):
+    """Update the text of a single tweet in the community queue."""
+    new_text = request.form.get('new_text', '').strip()
+    if not new_text:
+        flash('Tweet text cannot be empty.', 'error')
+        return redirect(url_for('index'))
+
+    if USE_MONGODB and community_queue_collection is not None:
+        from bson.objectid import ObjectId
+        result = community_queue_collection.update_one(
+            {'_id': ObjectId(tweet_id)},
+            {'$set': {'text': new_text}}
+        )
+        if result.matched_count == 0:
+            flash('Community tweet not found.', 'error')
+        else:
+            flash('Community tweet updated successfully.', 'success')
+    else:
+        flash('In-memory community queue operations are not supported.', 'error')
+    return redirect(url_for('index'))
+
+@app.route('/clear_community_queue', methods=['POST'])
+@require_admin
+def clear_community_queue():
+    """Clear all tweets from the active community queue."""
+    active_community_id = session.get('active_community_id')
+    if not active_community_id:
+        flash('No active community set. Please set one before clearing queue.', 'error')
+        return redirect(url_for('index'))
+
+    if USE_MONGODB and community_queue_collection is not None:
+        result = community_queue_collection.delete_many({'community_id': active_community_id})
+        flash(f'Cleared {result.deleted_count} tweets from community queue', 'info')
+    else:
+        flash('In-memory community queue operations are not supported.', 'error')
+    return redirect(url_for('index'))
+
 @app.route('/schedule', methods=['POST'])
 @require_admin
 def schedule():
@@ -832,27 +968,41 @@ def start_scheduler_if_needed():
 def set_active_community():
     """Add or update a community and set it as active in the session."""
     community_id = request.form.get('community_id', '').strip()
+    provided_name = request.form.get('community_name', '').strip()
     if not community_id or not community_id.isdigit():
         flash('Please provide a valid numerical Community ID.', 'error')
         return redirect(url_for('index'))
 
-    community_name = f"Community {community_id}" # Placeholder name
+    community_name = provided_name if provided_name else f"Community {community_id}" # Placeholder fallback
 
     if USE_MONGODB and communities_collection is not None:
-        communities_collection.update_one(
-            {'_id': community_id},
-            {'$setOnInsert': {
-                'name': community_name, 
-                'auto_posting_active': False,
-                'created_at': datetime.now(timezone.utc)
-            }},
-            upsert=True
-        )
+        set_on_insert = {
+            'auto_posting_active': False,
+            'created_at': datetime.now(timezone.utc)
+        }
+        # Only include 'name' in one operator to avoid conflict
+        if provided_name:
+            update_doc = {
+                '$setOnInsert': set_on_insert,
+                '$set': {'name': provided_name}
+            }
+        else:
+            update_doc = {
+                '$setOnInsert': {
+                    **set_on_insert,
+                    'name': community_name
+                }
+            }
+        communities_collection.update_one({'_id': community_id}, update_doc, upsert=True)
     else:
-        if not any(c['_id'] == community_id for c in IN_MEMORY_COMMUNITIES):
+        existing = next((c for c in IN_MEMORY_COMMUNITIES if c['_id'] == community_id), None)
+        if existing:
+            if provided_name:
+                existing['name'] = provided_name
+        else:
             IN_MEMORY_COMMUNITIES.append({
-                '_id': community_id, 
-                'name': community_name, 
+                '_id': community_id,
+                'name': community_name,
                 'auto_posting_active': False
             })
 
