@@ -48,13 +48,40 @@ def is_expired(updated_at):
     print(f"Now: {now}, Updated At: {updated_at}")
     return now - updated_at > timedelta(minutes=115)
 
-def refresh_token_if_needed():
-    tokens = get_tokens()
-    if not tokens:
-        raise Exception("No token found in DB.")
+# Global cache for user ID
+CACHED_USER_ID = None
 
-    if not is_expired(tokens["updated_at"]):
-        return tokens["access_token"]
+def get_valid_token(return_full_response=False):
+    """Get a valid access token and user ID, refreshing if necessary."""
+    global CACHED_USER_ID
+    token_info = get_tokens()
+    if not token_info:
+        print("No token found in DB.")
+        return None
+
+    if not is_expired(token_info["updated_at"]):
+        # Fetch and cache user_id if not already cached
+        if not CACHED_USER_ID:
+            headers = {"Authorization": f"Bearer {token_info['access_token']}"}
+            try:
+                response = requests.get("https://api.twitter.com/2/users/me", headers=headers)
+                if response.status_code == 200:
+                    user_id = response.json().get('data', {}).get('id')
+                    if user_id:
+                        CACHED_USER_ID = user_id
+                        print(f"User ID cached: {user_id}")
+                else:
+                    print(f"Failed to fetch user ID: {response.status_code} - {response.text}")
+            except Exception as e:
+                print(f"An exception occurred while fetching user ID: {e}")
+
+        # Attach user_id to the token info
+        if CACHED_USER_ID:
+            token_info['user_id'] = CACHED_USER_ID
+
+        if return_full_response:
+            return token_info
+        return token_info.get('access_token')
 
     # If expired, refresh
     auth_str = f"{CLIENT_ID}:{CLIENT_SECRET}"
@@ -67,7 +94,7 @@ def refresh_token_if_needed():
 
     data = {
         "grant_type": "refresh_token",
-        "refresh_token": tokens["refresh_token"],
+        "refresh_token": token_info["refresh_token"],
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI
     }
@@ -79,8 +106,7 @@ def refresh_token_if_needed():
 
     result = response.json()
     save_tokens(result["access_token"], result["refresh_token"])
-    return result["access_token"]
-
-# Only call this in your main script when needed
-def get_valid_token():
-    return refresh_token_if_needed()
+    
+    # After refreshing, get the full document again to return it
+    refreshed_tokens = get_tokens()
+    return refreshed_tokens if return_full_response else refreshed_tokens["access_token"]

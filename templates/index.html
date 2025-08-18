@@ -306,10 +306,10 @@
                         <div class="card actions-card">
                             <h2><i class="fa-solid fa-bolt"></i> Community Actions</h2>
                             <div class="form-actions">
-                                <form action="/start_community_auto_posting" method="POST" style="display:inline-block;">
+                                <form action="{{ url_for('start_community_auto_post') }}" method="POST" style="display:inline-block;">
                                     <button type="submit" class="btn btn-success" {% if not active_community or community_posting_active %}disabled{% endif %}>Start Auto Post</button>
                                 </form>
-                                <form action="/stop_community_auto_posting" method="POST" style="display:inline-block;">
+                                <form action="{{ url_for('stop_community_auto_posting') }}" method="POST" style="display:inline-block;">
                                     <button type="submit" class="btn btn-warning" {% if not community_posting_active %}disabled{% endif %}>Pause Auto Post</button>
                                 </form>
                             </div>

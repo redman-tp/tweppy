@@ -65,6 +65,7 @@ auto_post_thread = None
 community_posting_active = False
 community_auto_post_thread = None
 
+
 # In-memory data stores (fallback if MongoDB is not used)
 IN_MEMORY_QUEUE = []
 IN_MEMORY_HISTORY = []
@@ -80,7 +81,8 @@ queue_collection = None
 history_collection = None
 stats_collection = None
 scheduled_collection = None
-communities_collection = None # For communities
+communities_collection = None
+community_queue_collection = None
 
 # Try MongoDB connection with SSL error handling
 try:
@@ -93,7 +95,7 @@ try:
     stats_collection = db["bot_stats"]
     scheduled_collection = db["scheduled_posts"]
     communities_collection = db["communities"]
-    community_queue_collection = db["community_tweet_queue"] # For community-specific tweets
+    community_queue_collection = db["community_tweet_queue"]
     USE_MONGODB = True
     print("✅ MongoDB connection successful!")
 except Exception as e:
@@ -259,10 +261,10 @@ def post_to_profile(caption):
         return False, f"Error posting tweet: {str(e)}"
 
 def post_to_community(caption, community_id):
-    """Post to a specific community. Requires the authenticated user to be a member of that community."""
+    """Post to a specific community and return the new tweet's ID."""
     try:
         if not community_id:
-            return False, "community_id is required for community posting"
+            return False, "community_id is required for community posting", None
         token = get_valid_token()
         headers = {
             "Authorization": f"Bearer {token}",
@@ -271,15 +273,51 @@ def post_to_community(caption, community_id):
         payload = {"text": caption, "community_id": str(community_id)}
         response = requests.post("https://api.x.com/2/tweets", headers=headers, json=payload)
         if response.status_code == 201:
-            return True, "Community post created successfully"
+            tweet_id = response.json().get('data', {}).get('id')
+            return True, "Community post created successfully", tweet_id
         else:
-            return False, f"Failed to post to community: {response.status_code} - {response.text}"
+            return False, f"Failed to post to community: {response.status_code} - {response.text}", None
     except Exception as e:
-        return False, f"Error posting to community: {str(e)}"
+        return False, f"Error posting to community: {str(e)}", None
 
 def post_tweet(caption):
     """Backward-compatible alias for posting to profile."""
     return post_to_profile(caption)
+
+def retweet(tweet_id):
+    """Retweets a tweet by its ID using the user ID from get_valid_token."""
+    try:
+        token_info = get_valid_token(return_full_response=True)
+        if not token_info or 'access_token' not in token_info:
+            return False, "Could not get a valid access token."
+        
+        user_id = token_info.get('user_id')
+        if not user_id:
+            return False, "Could not retrieve user ID to perform retweet."
+
+        headers = {
+            "Authorization": f"Bearer {token_info['access_token']}",
+            "Content-Type": "application/json"
+        }
+
+        retweet_url = f"https://api.x.com/2/users/{user_id}/retweets"
+        payload = {"tweet_id": tweet_id}
+        response = requests.post(retweet_url, headers=headers, json=payload)
+
+        if response.status_code == 200:
+            retweeted = response.json().get('data', {}).get('retweeted')
+            if retweeted:
+                return True, "Retweet successful"
+            else:
+                return False, f"Retweet action returned false. Response: {response.text}"
+        else:
+            if response.status_code == 403 and "You have already retweeted this Tweet" in response.text:
+                return True, "Already retweeted"
+            return False, f"Failed to retweet: {response.status_code} - {response.text}"
+
+    except Exception as e:
+        print(f"An exception occurred in retweet: {e}")
+        return False, f"An exception occurred: {e}"
 
 # Web routes
 @app.route('/')
@@ -520,15 +558,22 @@ def community_auto_post_worker(active_community):
             next_tweet = get_next_community_tweet(community_id)
             if next_tweet:
                 print(f"[community-auto-post] Posting: {next_tweet['text']}")
-                # NOTE: The standard post_tweet does not support posting to communities yet.
-                # This will post to the main timeline. This is a known limitation.
-                success, message = post_tweet(next_tweet['text'])
-                if success:
+                success, message, new_tweet_id = post_to_community(next_tweet['text'], community_id)
+                if success and new_tweet_id:
                     mark_community_tweet_posted(next_tweet['_id'], next_tweet['text'])
-                    print(f"[community-auto-post] ✅ Posted: {next_tweet['text']}")
+                    print(f"[community-auto-post] ✅ Posted to community: {next_tweet['text']}")
+
+                    # Retweet to profile
+                    retweet_success, retweet_message = retweet(new_tweet_id)
+                    if retweet_success:
+                        print(f"[community-auto-post] ✅ Retweeted to profile.")
+                    else:
+                        print(f"[community-auto-post] ❌ Failed to retweet: {retweet_message}")
+
+                    # Wait after successful post
                     time.sleep(60 * 60 * 2) # Wait 2 hours
                 else:
-                    print(f"[community-auto-post] ❌ Failed to post: {message}")
+                    print(f"[community-auto-post] ❌ Failed to post to community: {message}")
                     time.sleep(60) # Wait 1 minute before retry
             else:
                 print(f"[community-auto-post] No tweets in queue for community {community_id}. Checking in 30s...")
@@ -601,10 +646,17 @@ def post_next_community():
         flash('No tweets in the community queue to post!', 'error')
         return redirect(url_for('index'))
 
-    success, message = post_to_community(next_tweet['text'], community_id=active_community_id)
-    if success:
+    success, message, new_tweet_id = post_to_community(next_tweet['text'], community_id=active_community_id)
+    if success and new_tweet_id:
         mark_community_tweet_posted(next_tweet['_id'], next_tweet['text'])
         flash('Community tweet posted successfully!', 'success')
+
+        # Retweet the new post to the main profile
+        retweet_success, retweet_message = retweet(new_tweet_id)
+        if retweet_success:
+            flash('Post was retweeted to your profile.', 'info')
+        else:
+            flash(f'Could not retweet to profile: {retweet_message}', 'error')
     else:
         flash(f'Failed to post community tweet: {message}', 'error')
     return redirect(url_for('index'))
@@ -630,10 +682,17 @@ def post_specific_community_tweet(tweet_id):
         return redirect(url_for('index'))
 
     active_community_id = session.get('active_community_id') or tweet_doc.get('community_id')
-    success, message = post_to_community(tweet_doc['text'], community_id=active_community_id)
-    if success:
+    success, message, new_tweet_id = post_to_community(tweet_doc['text'], community_id=active_community_id)
+    if success and new_tweet_id:
         mark_community_tweet_posted(obj_id, tweet_doc['text'])
         flash('Community tweet posted successfully!', 'success')
+
+        # Retweet the new post to the main profile
+        retweet_success, retweet_message = retweet(new_tweet_id)
+        if retweet_success:
+            flash('Post was retweeted to your profile.', 'info')
+        else:
+            flash(f'Could not retweet to profile: {retweet_message}', 'error')
     else:
         flash(f'Failed to post community tweet: {message}', 'error')
     return redirect(url_for('index'))
