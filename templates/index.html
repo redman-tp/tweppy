@@ -98,10 +98,10 @@
                             <h2><i class="fa-solid fa-bolt"></i> Actions</h2>
                             <div class="form-actions">
                                 <form action="{{ url_for('start_auto_posting') }}" method="POST" style="display:inline-block; margin-right:8px;">
-                                    <button type="submit" class="btn btn-success">Start Auto Post</button>
+                                    <button type="submit" class="btn btn-success" {% if posting_active %}disabled{% endif %}>Start Auto Post</button>
                                 </form>
                                 <form action="{{ url_for('stop_auto_posting') }}" method="POST" style="display:inline-block; margin-right:8px;">
-                                    <button type="submit" class="btn btn-warning">Pause Auto Post</button>
+                                    <button type="submit" class="btn btn-warning" {% if not posting_active %}disabled{% endif %}>Pause Auto Post</button>
                                 </form>
                                 <form action="{{ url_for('clear_stats') }}" method="POST" style="display:inline-block;">
                                     <button type="submit" class="btn btn-danger">Clear Stats</button>

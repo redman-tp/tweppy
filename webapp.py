@@ -163,14 +163,22 @@ def add_tweets_to_community_queue(tweets, community_id):
         return 0
 
 def get_next_tweet():
-    """Get the next unposted tweet from queue"""
+    """Get a random unposted tweet from the queue."""
     if USE_MONGODB and queue_collection is not None:
-        return queue_collection.find_one({"posted": False}, sort=[("created_at", 1)])
+        # Use aggregation pipeline to get one random document
+        pipeline = [
+            {"$match": {"posted": False}},
+            {"$sample": {"size": 1}}
+        ]
+        random_tweets = list(queue_collection.aggregate(pipeline))
+        if random_tweets:
+            return random_tweets[0]
+        return None
     else:
-        # Use in-memory storage
-        for tweet in IN_MEMORY_QUEUE:
-            if not tweet.get("posted", False):
-                return tweet
+        # Use in-memory storage for random choice
+        unposted_tweets = [t for t in IN_MEMORY_QUEUE if not t.get("posted", False)]
+        if unposted_tweets:
+            return random.choice(unposted_tweets)
         return None
 
 def mark_tweet_posted(tweet_id, tweet_text):
